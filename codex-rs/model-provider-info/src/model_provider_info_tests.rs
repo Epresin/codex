@@ -244,6 +244,40 @@ fn codex_backend_routes_require_codex_base_url() {
 }
 
 #[test]
+fn openai_catalog_url_follows_explicit_base_url() {
+    for (base_url, catalog_url) in [
+        (None, None),
+        (
+            Some("https://gateway.example"),
+            Some("https://gateway.example/models"),
+        ),
+        (
+            Some("https://gateway.example/"),
+            Some("https://gateway.example/models"),
+        ),
+        (
+            Some("https://gateway.example/prefix/v1"),
+            Some("https://gateway.example/prefix/v1/models"),
+        ),
+        (
+            Some("https://gateway.example/prefix/v1/"),
+            Some("https://gateway.example/prefix/v1/models"),
+        ),
+        (
+            Some("https://gateway.example/prefix/v1///"),
+            Some("https://gateway.example/prefix/v1/models"),
+        ),
+    ] {
+        let provider = ModelProviderInfo::create_openai_provider(base_url.map(str::to_owned));
+        assert_eq!(
+            provider.model_catalog_url.as_deref().map(String::as_str),
+            catalog_url
+        );
+        assert_eq!(provider.base_url.as_deref(), base_url);
+    }
+}
+
+#[test]
 fn test_uses_openai_actor_authorization() {
     let mut provider = ModelProviderInfo {
         http_headers: Some(maplit::hashmap! {

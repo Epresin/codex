@@ -524,10 +524,13 @@ other non-default provider fields are not supported"
     }
 
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
+        let model_catalog_url = base_url
+            .as_deref()
+            .map(|base| format!("{}/models", base.trim_end_matches('/')).into());
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
             base_url,
-            model_catalog_url: None,
+            model_catalog_url,
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,

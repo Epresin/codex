@@ -473,7 +473,7 @@ mod tests {
             (
                 "OpenAI",
                 Some("https://example.com/codex"),
-                None,
+                Some("https://example.com/codex/models"),
                 "https://example.com/codex",
             ),
             (
@@ -485,11 +485,19 @@ mod tests {
         ] {
             let capture = Arc::new(CaptureModelsUrl(Mutex::new(/*t*/ None)));
             let auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test-api-key"));
-            let endpoint = Arc::new(OpenAiModelsEndpoint {
-                provider_info: ModelProviderInfo {
+            let provider_info = if name == "OpenAI" {
+                ModelProviderInfo::create_openai_provider(base_url.map(str::to_string))
+            } else {
+                // Do not inherit the built-in OpenAI constructor's automatic catalog.
+                ModelProviderInfo {
                     name: name.to_string(),
-                    ..ModelProviderInfo::create_openai_provider(base_url.map(str::to_string))
-                },
+                    base_url: base_url.map(str::to_string),
+                    requires_openai_auth: true,
+                    ..ModelProviderInfo::default()
+                }
+            };
+            let endpoint = Arc::new(OpenAiModelsEndpoint {
+                provider_info,
                 auth_manager: Some(auth.clone()),
                 gateway_auth_manager: None,
                 transport_builder: capture.clone(),
@@ -515,6 +523,34 @@ mod tests {
                 inference_url
             );
         }
+    }
+
+    #[tokio::test]
+    async fn gateway_catalog_request_uses_api_key() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/prefix/v1/models"))
+            .and(header("authorization", "Bearer test-api-key"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(ModelsResponse { models: Vec::new() }),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let endpoint = OpenAiModelsEndpoint::new(
+            ModelProviderInfo::create_openai_provider(Some(format!("{}/prefix/v1/", server.uri()))),
+            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "test-api-key",
+            ))),
+            None,
+        );
+        endpoint
+            .list_models(
+                "0.0.0",
+                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            )
+            .await
+            .expect("gateway catalog request should succeed");
     }
 
     #[tokio::test]
