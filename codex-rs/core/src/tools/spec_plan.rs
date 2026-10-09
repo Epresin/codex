@@ -69,6 +69,7 @@ use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_prompts::ResolvedModelMessages;
 use codex_protocol::DEFAULT_FUNCTION_NAMESPACE;
 use codex_protocol::account::PlanType;
+use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
@@ -800,10 +801,11 @@ fn image_generation_available(turn_context: &TurnContext, model_info: &ModelInfo
     let provider = turn_context.provider.info();
     provider.uses_openai_actor_authorization()
         || (provider.requires_openai_auth
-            && turn_context
-                .auth_manager
-                .as_deref()
-                .is_some_and(AuthManager::current_auth_uses_codex_backend))
+            && turn_context.auth_manager.as_deref().is_some_and(|auth| {
+                auth.current_auth_uses_codex_backend()
+                    || (provider.base_url.is_some()
+                        && auth.get_api_auth_mode() == Some(AuthMode::ApiKey))
+            }))
 }
 
 fn wait_agent_timeout_options(turn_context: &TurnContext) -> WaitAgentTimeoutOptions {
