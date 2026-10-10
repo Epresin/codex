@@ -22,6 +22,23 @@ fn runtime_internal_metadata_opt_in_is_not_serialized_or_configurable() {
 }
 
 #[test]
+fn test_openai_provider_uses_http_streaming_by_default() {
+    for base_url in [None, Some("https://gateway.example/v1")] {
+        let providers = built_in_model_providers(base_url.map(str::to_owned));
+        let provider = providers
+            .get(OPENAI_PROVIDER_ID)
+            .expect("OpenAI provider should be built in");
+
+        assert!(!provider.supports_websockets);
+        assert_eq!(provider.wire_api, WireApi::Responses);
+        assert_eq!(provider.base_url.as_deref(), base_url);
+        assert!(provider.is_openai());
+        assert!(provider.requires_openai_auth);
+        assert!(provider.supports_standalone_web_search);
+    }
+}
+
+#[test]
 fn test_api_provider_applies_current_managed_residency() {
     let info = ModelProviderInfo {
         http_headers: Some(maplit::hashmap! {

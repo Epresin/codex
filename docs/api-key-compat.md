@@ -13,11 +13,16 @@ The upstream Apache-2.0 license and NOTICE are preserved.
 2. Allow the existing native image-generation implementation for API-key
    authentication with an explicit base URL, while retaining the existing
    feature, model-capability, tool-policy, and sandbox checks.
+3. Use HTTP/SSE instead of WebSocket transport for the native `openai` provider's
+   Responses requests. With an HTTPS base URL, inference starts over HTTPS
+   without WebSocket preconnection or failed WebSocket retries first.
 
-Each functional patch includes its focused regression tests. Search,
-WebSocket transport, image handling, and compaction reuse the upstream
-implementations. The client remains in API-key mode; it does not impersonate
-ChatGPT authentication or a subscription plan.
+Each functional patch includes its focused regression tests. Search, image
+handling, compaction, and HTTP streaming reuse the upstream implementations.
+The transport default does not change authentication or the model catalog,
+and does not alter app-server, MCP, or realtime connections. The client remains
+in API-key mode; it does not impersonate ChatGPT authentication or a subscription
+plan.
 
 The endpoint must implement the relevant protocol. In particular, dynamic
 Codex metadata requires the Codex rich `/models` response, not just an ordinary
@@ -50,6 +55,8 @@ release needs this correction; do not carry it forward automatically.
 
 ## Verification
 
+### Initial compatibility-patch verification
+
 The functional patches were compiled with Rust 1.95.0 on Windows using the
 `dev-small` profile. The 37 focused tests passed: 34 provider-info tests,
 two model-provider tests, and one native image-generation gate test.
@@ -62,6 +69,20 @@ These are compatibility observations, not a claim that every endpoint or
 model supports all of those operations. Private test data and deployment
 logs are intentionally kept outside this fork.
 
+### HTTP/SSE-default verification
+
+The provider-info crate's 35 unit tests passed on Windows with:
+
+```shell
+cargo test --offline --locked --profile dev-small -p codex-model-provider-info --lib
+```
+
+The new regression test checks the built-in `openai` provider both with and
+without an explicit base URL. HTTP/SSE is selected while the provider identity,
+Responses wire API, authentication requirement, and standalone search capability
+remain unchanged. No new end-to-end gateway or corporate-proxy acceptance was
+run for this transport-default change.
+
 ## Maintaining the fork
 
 - `upstream` points to the official `openai/codex` Git repository.
@@ -70,9 +91,9 @@ logs are intentionally kept outside this fork.
 - The gateway project is maintained in a separate repository and release line.
 
 For an upgrade, fetch the selected official release tag and create an upgrade
-branch. Replay the two functional commits and the documentation commit,
-reviewing any upstream refactoring. Apply the lockfile correction only if it
-is still needed. If upstream implements the desired behavior, drop the
+branch. Replay the two compatibility patches and the HTTP/SSE-default patch,
+along with their documentation changes, reviewing any upstream refactoring.
+Apply the lockfile correction only if it is still needed. If upstream implements the desired behavior, drop the
 corresponding local patch rather than maintaining a duplicate implementation.
 Build and rerun the focused tests and compatibility acceptance before
 promoting the new version. Keep the previously verified tag available.

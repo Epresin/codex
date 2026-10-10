@@ -561,7 +561,7 @@ other non-default provider fields are not supported"
             stream_idle_timeout_ms: None,
             websocket_connect_timeout_ms: None,
             requires_openai_auth: true,
-            supports_websockets: true,
+            supports_websockets: false,
             supports_standalone_web_search: true,
             capabilities: None,
             include_internal_metadata: true,

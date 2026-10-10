@@ -1,4 +1,4 @@
-> **Personal Codex fork:** This repository preserves the official Codex history and adds two small API-key/custom-base-URL compatibility patches. It does not depend on a particular gateway, service, or deployment. See [the fork notes](docs/api-key-compat.md) for scope and maintenance. The upstream installation commands below install official Codex, not this fork.
+> **Personal Codex fork:** This repository preserves the official Codex history and adds two small API-key/custom-base-URL compatibility patches plus an HTTP/SSE default for the native `openai` provider. It does not depend on a particular gateway, service, or deployment. See [the fork notes](docs/api-key-compat.md) for scope and maintenance. The upstream installation commands below install official Codex, not this fork.
 
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
