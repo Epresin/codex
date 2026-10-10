@@ -111,8 +111,14 @@ The EP.3 binary's metadata and bootstrap requests have an eight-second total
 deadline (the doctor and daemon use the same deadline). The online installer
 keeps GitHub's five-second connection/eight-second metadata timeouts and falls
 back after ten seconds below 256 KiB/s for packages. Its Cloudflare requests now
-allow 1,800 seconds for both connection and total transfer, without GitHub's
-low-speed cutoff. File transfers show progress; metadata stays silent.
+allow 1,800 seconds to connect. Cloudflare file downloads have no total-time
+limit: they stop only after 1,800 seconds below 1 byte/second. Metadata retains
+its 1,800-second total deadline. File transfers show progress; metadata stays
+silent. Interrupted archives are retained under
+`$CODEX_HOME/packages/standalone/downloads/<sha256>.part` (or the daemon package
+root). GitHub-to-Cloudflare fallback and rerunning the installer resume the same
+file. SHA-256 is checked before installation; successful installation removes
+the cached archive.
 The wget compatibility path uses connection/stalled-read timeouts (also 1,800
 seconds for Cloudflare) instead of curl's total-time/minimum-speed controls.
 This script-only update does not change the EP.3 binary's compiled bootstrap

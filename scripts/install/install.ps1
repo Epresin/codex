@@ -106,9 +106,11 @@ function Invoke-ReleaseRequest {
         $curlArgs = @("-fL", "--connect-timeout", $connectTimeout)
         if ($OutFile) {
             $curlArgs += @("--progress-bar", "-o", $OutFile)
+            if ($OutFile.EndsWith(".part")) { $curlArgs += @("--continue-at", "-") }
             if (-not $isCloudflare) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
         } else { $curlArgs += "--silent" }
-        if ($isCloudflare) { $curlArgs += @("--max-time", "1800") }
+        if ($isCloudflare -and $OutFile) { $curlArgs += @("--max-time", "0", "--speed-time", "1800", "--speed-limit", "1") }
+        elseif ($isCloudflare) { $curlArgs += @("--max-time", "1800") }
         elseif (-not $OutFile) { $curlArgs += @("--max-time", "8") }
         $body = & curl.exe @curlArgs $url
         if ($LASTEXITCODE -eq 0) {
@@ -122,9 +124,17 @@ function Invoke-ReleaseRequest {
 
 function Invoke-ReleaseDownload {
     param([object]$Metadata, [string]$OutFile, [string]$ExpectedDigest)
-    Invoke-ReleaseRequest -Uri $Metadata.Url -OutFile $OutFile
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedDigest)) {
-        Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest
+    if ($ExpectedDigest -and (Test-Path -LiteralPath $OutFile)) {
+        try { Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest; return } catch {}
+    }
+    try { Invoke-ReleaseRequest -Uri $Metadata.Url -OutFile $OutFile }
+    catch {
+        if ($OutFile.EndsWith(".part")) { Write-WarningStep "Partial download kept at $OutFile; rerun the installer to resume." }
+        throw
+    }
+    if ($ExpectedDigest) {
+        try { Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest }
+        catch { Remove-Item -LiteralPath $OutFile -Force; throw }
     }
 }
 
@@ -927,13 +937,16 @@ try {
                 Write-WarningStep "Found incomplete existing release at $releaseDir. Reinstalling."
             }
 
-            $archivePath = Join-Path $tempDir $packageAsset
             $checksumPath = Join-Path $tempDir $checksumAsset
             $stagingDir = Join-Path $releasesDir ".staging.$releaseName.$PID"
 
-            Write-Step "Downloading Codex CLI"
+            Write-Step "Downloading $checksumAsset"
             Invoke-ReleaseDownload -Metadata $checksumMetadata -OutFile $checksumPath
             $expectedPackageDigest = Get-PackageArchiveDigest -ManifestPath $checksumPath -AssetName $packageAsset
+            $downloadCache = Join-Path $standaloneRoot "downloads"
+            New-Item -ItemType Directory -Force -Path $downloadCache | Out-Null
+            $archivePath = Join-Path $downloadCache "$expectedPackageDigest.part"
+            Write-Step "Downloading $packageAsset (resume supported)"
             Invoke-ReleaseDownload -Metadata $packageMetadata -OutFile $archivePath -ExpectedDigest $expectedPackageDigest
 
             New-Item -ItemType Directory -Force -Path $releasesDir | Out-Null
@@ -950,6 +963,7 @@ try {
                 Remove-Item -LiteralPath $releaseDir -Recurse -Force
             }
             Move-Item -LiteralPath $stagingDir -Destination $releaseDir
+            Remove-Item -LiteralPath $archivePath -Force
         }
 
         if (-not (Test-ReleaseIsComplete -ReleaseDir $releaseDir -ExpectedVersion $resolvedVersion -ExpectedTarget $target -Layout $installLayout)) {

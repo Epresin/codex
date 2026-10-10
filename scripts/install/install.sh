@@ -127,17 +127,29 @@ request_download() {
   connect_timeout=5
   download_timeout="${3:-0}"
   read_timeout=10
+  speed_time=10
+  speed_limit="${4:-0}"
+  resume_from=0
+  case "$2" in *.part) resume_from=- ;; esac
   case "$1" in
-    https://gh.mccts.cn/*) connect_timeout=1800; download_timeout=1800; read_timeout=1800 ;;
+    https://gh.mccts.cn/*)
+      connect_timeout=1800; read_timeout=1800; speed_time=1800; speed_limit=1
+      download_timeout=0
+      [ "$2" != "-" ] || download_timeout=1800
+      ;;
   esac
   if command -v curl >/dev/null 2>&1; then
     progress_flag=--progress-bar
     [ "$2" != "-" ] || progress_flag=--silent
-    curl --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time 10 --speed-limit "${4:-0}" -fSL "$progress_flag" "$1" -o "$2"
+    curl --continue-at "$resume_from" --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time "$speed_time" --speed-limit "$speed_limit" -fSL "$progress_flag" "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
     progress_flag=--progress=bar:force
     [ "$2" != "-" ] || progress_flag=--quiet
-    wget --connect-timeout="$connect_timeout" --read-timeout="$read_timeout" --tries=1 "$progress_flag" -O "$2" "$1"
+    if [ "$resume_from" = "-" ]; then
+      wget --continue --connect-timeout="$connect_timeout" --read-timeout="$read_timeout" --tries=1 "$progress_flag" -O "$2" "$1"
+    else
+      wget --connect-timeout="$connect_timeout" --read-timeout="$read_timeout" --tries=1 "$progress_flag" -O "$2" "$1"
+    fi
   else
     echo "curl or wget is required to install Codex." >&2
     return 1
@@ -1006,17 +1018,27 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
     warn "Found incomplete existing release at $release_dir; reinstalling."
   fi
 
-  archive_path="$tmp_dir/$asset"
   checksum_path="$tmp_dir/$checksum_asset"
-
-  step "Downloading Codex CLI"
+  step "Downloading $checksum_asset"
   download_file "$checksum_url" "$checksum_path"
   expected_digest="$(package_archive_digest "$asset" "$checksum_path")"
-  download_file "$download_url" "$archive_path"
-  verify_archive_digest "$archive_path" "$expected_digest"
+  mkdir -p "$STANDALONE_ROOT/downloads"
+  archive_path="$STANDALONE_ROOT/downloads/$expected_digest.part"
+  if [ ! -f "$archive_path" ] || ! verify_archive_digest "$archive_path" "$expected_digest" >/dev/null 2>&1; then
+    step "Downloading $asset (resume supported)"
+    if ! download_file "$download_url" "$archive_path"; then
+      warn "Partial download kept at $archive_path; rerun the installer to resume."
+      exit 1
+    fi
+    if ! verify_archive_digest "$archive_path" "$expected_digest"; then
+      rm -f "$archive_path"
+      exit 1
+    fi
+  fi
 
   step "Installing standalone package to $release_dir"
   install_package_release "$release_dir" "$archive_path"
+  rm -f "$archive_path"
 
 fi
 if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target" "$install_layout"; then

@@ -18,7 +18,7 @@ ASSET = f"codex-package-{TARGET}.tar.gz"
 
 @unittest.skipUnless(os.name == "posix", "the shell installer runs on Unix")
 class InstallShTest(unittest.TestCase):
-    def install_fixture(self, *, api_digests, exact_version):
+    def install_fixture(self, *, api_digests, exact_version, interrupt_download=False):
         with tempfile.TemporaryDirectory(prefix="codex-ep-install-") as temporary:
             root = Path(temporary)
             package = root / "package"
@@ -43,10 +43,13 @@ class InstallShTest(unittest.TestCase):
                 ).encode(),
             }
             requests = []
+            resume_offsets = []
+            interrupted = False
             class Handler(http.server.BaseHTTPRequestHandler):
                 def log_message(self, *args):
                     pass
                 def do_GET(self):
+                    nonlocal interrupted
                     requests.append(self.path)
                     if self.path.startswith("/releases/"):
                         assets = []
@@ -58,7 +61,22 @@ class InstallShTest(unittest.TestCase):
                         body = json.dumps({"tag_name": "rust-v" + VERSION, "assets": assets}).encode()
                     else:
                         body = payloads[self.path.removeprefix("/files/")]
-                    self.send_response(200)
+                    if interrupt_download and self.path == "/files/" + ASSET:
+                        if not interrupted:
+                            interrupted = True
+                            self.send_response(200)
+                            self.send_header("Content-Length", str(len(body)))
+                            self.end_headers()
+                            self.wfile.write(body[:len(body) // 2])
+                            self.close_connection = True
+                            return
+                        offset = int(self.headers["Range"].removeprefix("bytes=").removesuffix("-"))
+                        resume_offsets.append(offset)
+                        self.send_response(206)
+                        self.send_header("Content-Range", f"bytes {offset}-{len(body)-1}/{len(body)}")
+                        body = body[offset:]
+                    else:
+                        self.send_response(200)
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
@@ -83,6 +101,14 @@ class InstallShTest(unittest.TestCase):
                 if exact_version:
                     args += ["--release", VERSION]
                 result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
+                if interrupt_download:
+                    self.assertNotEqual(result.returncode, 0)
+                    partials = list((codex_home / "packages/standalone/downloads").glob("*.part"))
+                    self.assertEqual(len(partials), 1)
+                    self.assertEqual(partials[0].read_bytes(), payloads[ASSET][:len(payloads[ASSET]) // 2])
+                    result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(resume_offsets, [len(payloads[ASSET]) // 2])
+                    self.assertFalse(partials[0].exists())
             finally:
                 server.shutdown()
                 server.server_close()
@@ -91,11 +117,14 @@ class InstallShTest(unittest.TestCase):
             self.assertEqual(requests, [
                 "/releases/tags/rust-v" + VERSION if exact_version else "/releases/latest",
                 "/files/codex-package_SHA256SUMS", "/files/" + ASSET,
-            ])
+            ] * (2 if interrupt_download else 1))
             installed = root / "bin/codex"
             self.assertEqual(subprocess.check_output([str(installed), "--version"], text=True).strip(), "codex-cli " + VERSION)
             self.assertEqual(config.read_text(), '# keep existing user configuration\n')
             self.assertTrue((installed.resolve().parent.parent / "codex-package.json").is_file())
+
+    def test_interrupted_archive_survives_and_resumes(self):
+        self.install_fixture(api_digests=False, exact_version=False, interrupt_download=True)
 
     def test_gitee_standard_package_without_api_digest(self):
         self.install_fixture(api_digests=False, exact_version=False)
