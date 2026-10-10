@@ -15,7 +15,7 @@ $NonInteractive = $env:CODEX_NON_INTERACTIVE -match "^(?i:1|true|yes)$"
 $ReleasesApiUri = if ($env:CODEX_RELEASES_API_URL) {
     $env:CODEX_RELEASES_API_URL.TrimEnd('/')
 } else {
-    "https://gitee.com/api/v5/repos/epresin/codex/releases"
+    "https://api.github.com/repos/Epresin/codex/releases"
 }
 
 function Write-Step {

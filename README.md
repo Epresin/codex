@@ -13,59 +13,29 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ## Quickstart
 
-### Installing and running Codex CLI
+### Installing and running Codex EP
 
-Run the following on Mac or Linux to install Codex CLI:
+This is the public `Epresin/codex` fork of `openai/codex`. Our maintained branch
+is `ep`; `main` retains the upstream line. Install the EP Linux x86_64 package
+(including WSL) from this repository's GitHub Releases:
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```sh
+curl -fsSL https://github.com/Epresin/codex/raw/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
 ```
 
-Run the following on Windows to install Codex CLI:
+Then run `codex --version` and `codex`. The current release is `0.162.1-ep.2`.
+Use `codex update` for later releases. Existing configuration and authentication
+are preserved. Other platform binaries are not published by this release;
+installing official npm/Homebrew packages would install upstream Codex, not EP.
 
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
+For API-key/custom-base-URL setup, package contents, and maintenance, see
+[the fork notes](docs/api-key-compat.md). Standard packages are available in
+[this fork's Releases](https://github.com/Epresin/codex/releases).
 
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
-
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
-```
-
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
-```
-
-Codex CLI can also be installed via the following package managers:
-
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
-
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
-
-Then simply run `codex` to get started.
-
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
+**Migration note:** EP.2 Linux archives are reused without rebuilding. Their
+embedded updater still bootstraps through Gitee; that installer now downloads
+from GitHub. The source constants on `ep` are changed to direct GitHub URLs
+for the next build. See the fork notes for the exact distinction.
 
 ### Using Codex with your ChatGPT plan
 

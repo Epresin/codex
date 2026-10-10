@@ -97,10 +97,10 @@ run for this transport-default change.
 ## Install and update
 
 The repository and its release assets are public. Install the Linux package
-with the fork's standalone installer (no Gitee token is required):
+with the fork's standalone installer (no GitHub token is required):
 
 ```sh
-curl -fsSL https://gitee.com/epresin/codex/raw/main/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+curl -fsSL https://github.com/Epresin/codex/raw/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
 ```
 
 This uses the upstream standalone directory layout under
@@ -113,6 +113,23 @@ Only targets with uploaded release assets can be installed. This release
 provides Linux x86_64 musl; the Windows installer shares the same protocol,
 but no Windows build is published by this release.
 
+## GitHub migration (2026-10-10)
+
+The GitHub `rust-v0.162.1-ep.2` release reuses the already-built Linux archives
+from commit `34752d7aacef04ff35e4e5d1afc3503b6a3e2394` byte for byte.
+The version, binaries, archive checksums, and original tag are unchanged;
+this migration does not rerun the Rust build or the model acceptance tests.
+Release installer scripts are updated separately to download from GitHub.
+`BUILD_INFO.json` identifies the binary source commit and installer source commit.
+
+The reused EP.2 binaries still contain Gitee URLs for update checks and the
+installer bootstrap. The old Gitee installer endpoint is retained and now
+queries GitHub Releases, so `codex update` can download this GitHub package.
+The old Gitee EP.2 release is retained as a migration notice, not a binary host.
+The `ep` branch's Rust update constants now point directly to GitHub; these
+constant changes will take effect in the next compiled release, not in the
+reused EP.2 binaries. No binary patching or version relabeling is performed.
+
 ## Version identity and update checks
 
 `codex --version` and the TUI header report `0.162.1-ep.2`.
@@ -120,7 +137,8 @@ New releases use the tag form `rust-v0.162.1-ep.2`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background
-server's installer URL point to EP, never the official distribution.
+server's installer URL point to EP, never the official distribution. The EP.2
+binary's legacy Gitee bootstrap is described in the migration note above.
 The existing 20-hour cache and confirmation UI are retained. The cache is
 `$CODEX_HOME/ep-version.json`, separate from old official version metadata.
 Checks are enabled by default; explicit user configuration takes precedence.
@@ -176,8 +194,11 @@ a claim that the complete upstream test suite was run.
 ## Maintaining the fork
 
 - `upstream` points to the official `openai/codex` Git repository.
-- `origin` points to this personal fork on Gitee.
-- `main` contains the selected upstream release plus the small patch series.
+- `origin` points to the public GitHub fork `Epresin/codex`, whose parent is
+  `openai/codex`.
+- `ep` is the default branch and contains the selected upstream release plus
+  the small patch series. The GitHub `main` branch is kept as the upstream line.
+- `gitee` retains the old repository for existing installation/update links.
 - The gateway project is maintained in a separate repository and release line.
 
 For an upgrade, fetch the selected official release tag and create an upgrade

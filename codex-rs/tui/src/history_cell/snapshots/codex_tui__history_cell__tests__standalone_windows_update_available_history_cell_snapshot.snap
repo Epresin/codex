@@ -5,8 +5,8 @@ expression: rendered
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ✨ Update available! 0.162.1-ep.2 -> 9.9.9                                                                 │
 │ Run powershell -ExecutionPolicy Bypass -c '$env:CODEX_NON_INTERACTIVE=1; irm                               │
-│ https://gitee.com/epresin/codex/raw/main/scripts/install/install.ps1 | iex' to update.                     │
+│ https://github.com/Epresin/codex/raw/ep/scripts/install/install.ps1 | iex' to update.                      │
 │                                                                                                            │
 │ See full release notes:                                                                                    │
-│ https://gitee.com/epresin/codex/releases                                                                   │
+│ https://github.com/Epresin/codex/releases                                                                  │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

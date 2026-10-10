@@ -5,7 +5,7 @@ set -eu
 RELEASE="${CODEX_RELEASE:-latest}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 DAEMON_ONLY="${CODEX_INSTALL_DAEMON_ONLY:-0}"
-RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://gitee.com/api/v5/repos/epresin/codex/releases}"
+RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://api.github.com/repos/Epresin/codex/releases}"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
