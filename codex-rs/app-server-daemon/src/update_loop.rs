@@ -74,6 +74,10 @@ const INSTALLER_STDERR_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const INSTALL_URL: &str = codex_install_context::release::UNIX_INSTALLER_URL;
 #[cfg(windows)]
 const INSTALL_URL: &str = codex_install_context::release::WINDOWS_INSTALLER_URL;
+#[cfg(unix)]
+const INSTALL_FALLBACK_URL: &str = codex_install_context::release::UNIX_INSTALLER_FALLBACK_URL;
+#[cfg(windows)]
+const INSTALL_FALLBACK_URL: &str = codex_install_context::release::WINDOWS_INSTALLER_FALLBACK_URL;
 
 pub(crate) async fn run(
     http_client_factory: HttpClientFactory,
@@ -737,7 +741,13 @@ async fn cancel_installer(child: &mut tokio::process::Child, package_root: &Path
 }
 
 async fn fetch_installer_script(http: &impl InstallerHttp) -> Result<Vec<u8>> {
-    match http.get(INSTALL_URL).await? {
+    let timeout = codex_install_context::release::RELEASE_REQUEST_TIMEOUT;
+    if let Ok(Ok(InstallerResponse::Success(body))) =
+        tokio::time::timeout(timeout, http.get(INSTALL_URL)).await
+    {
+        return Ok(body);
+    }
+    match tokio::time::timeout(timeout, http.get(INSTALL_FALLBACK_URL)).await?? {
         InstallerResponse::Success(body) => Ok(body),
         InstallerResponse::Unsuccessful { status } => {
             anyhow::bail!("standalone Codex updater request failed with status {status}")

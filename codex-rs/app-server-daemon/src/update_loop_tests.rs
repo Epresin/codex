@@ -6,6 +6,7 @@ use pretty_assertions::assert_eq;
 #[cfg(unix)]
 use tempfile::TempDir;
 
+use super::INSTALL_FALLBACK_URL;
 use super::INSTALL_URL;
 use super::InstallerHttp;
 use super::InstallerResponse;
@@ -48,7 +49,10 @@ async fn installer_fetch_rejects_non_success_status() {
         .expect_err("non-success response should fail");
 
     assert!(error.to_string().contains("503"));
-    assert_eq!(http.requested_urls(), vec![INSTALL_URL.to_string()]);
+    assert_eq!(
+        http.requested_urls(),
+        vec![INSTALL_URL.to_string(), INSTALL_FALLBACK_URL.to_string()]
+    );
 }
 
 #[cfg(unix)]

@@ -17,14 +17,17 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 This is the public `Epresin/codex` fork of `openai/codex`. Our maintained branch
 is `ep`; `main` retains the upstream line. Install the EP Linux x86_64 package
-(including WSL) from this repository's GitHub Releases through the Cloudflare
-download proxy (the installer falls back to GitHub if the proxy fails):
+(including WSL) from this repository's Releases. GitHub is tried first, with
+Cloudflare fallback if it fails or is slow:
 
 ```sh
-curl -fsSL https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.sh) ||
+   s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
+  printf '%s\n' "$s" | CODEX_NON_INTERACTIVE=1 sh
+fi
 ```
 
-Then run `codex --version` and `codex`. The current release is `0.162.1-ep.2`.
+Then run `codex --version` and `codex`. The current release is `0.162.1-ep.3`.
 Use `codex update` for later releases. Existing configuration and authentication
 are preserved. Other platform binaries are not published by this release;
 installing official npm/Homebrew packages would install upstream Codex, not EP.
@@ -33,10 +36,11 @@ For API-key/custom-base-URL setup, package contents, and maintenance, see
 [the fork notes](docs/api-key-compat.md). Standard packages are available in
 [this fork's Releases](https://github.com/Epresin/codex/releases).
 
-**Migration note:** EP.2 Linux archives are reused without rebuilding. Their
-embedded updater still bootstraps through Gitee; that installer now downloads
-from GitHub. The source constants on `ep` are changed to direct GitHub URLs
-for the next build. See the fork notes for the exact distinction.
+**EP.3 update policy:** Update checks, installer bootstrap, and package downloads
+try GitHub first, then the Cloudflare proxy on failure or slow transfer. The
+previous EP.2 binary used a legacy Gitee bootstrap; EP.3 is a fresh build and
+has no Gitee updater dependency. Existing model/authentication settings are
+unrelated to this release-source change.
 
 ### Using Codex with your ChatGPT plan
 

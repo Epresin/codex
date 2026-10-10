@@ -397,7 +397,12 @@ async fn fetch_latest_version(
         #[serde(default)]
         prerelease: bool,
     }
-    let info = http_get_json::<ReleaseInfo>(client, LATEST_RELEASE_URL).await?;
+    let info = match http_get_json::<ReleaseInfo>(client, LATEST_RELEASE_URL).await {
+        Ok(info) => info,
+        Err(_) => {
+            http_get_json::<ReleaseInfo>(client, release::LATEST_RELEASE_FALLBACK_URL).await?
+        }
+    };
     if info.prerelease {
         return Err("Latest EP release is not published yet".to_string());
     }
@@ -410,7 +415,7 @@ async fn http_get_json<T>(client: &RouteAwareClientPool, url: &str) -> Result<T,
 where
     T: for<'de> Deserialize<'de>,
 {
-    tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
+    tokio::time::timeout(release::RELEASE_REQUEST_TIMEOUT, async {
         let mut response = client
             .request(Method::GET, url)
             .header(

@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.2`.
+The current EP release version is `0.162.1-ep.3`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -100,14 +100,26 @@ The repository and its release assets are public. Install the Linux package
 with the fork's standalone installer (no GitHub token is required):
 
 ```sh
-curl -fsSL https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.sh) ||
+   s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
+  printf '%s\n' "$s" | CODEX_NON_INTERACTIVE=1 sh
+fi
 ```
 
-The installer prefers `gh.mccts.cn` for release metadata and downloads and
-falls back to GitHub if an accelerated request fails. `CODEX_RELEASES_API_URL`
-still overrides the metadata source. The proxy uses a Worker and edge cache,
-not R2; see `scripts/github-proxy/README.md`. No Rust rebuild is needed for
-this installer change. The EP.2 binary bootstrap limitation below still applies.
+EP.3 prefers GitHub for update checks, installer bootstrap, and package files.
+Metadata and bootstrap requests have an eight-second total deadline (the doctor
+and daemon use the same deadline). Curl connections time out after five seconds;
+package downloads fall back after ten seconds below 256 KiB/s. The fallback is
+`gh.mccts.cn`; its package transfer does not have the GitHub low-speed cutoff.
+The wget compatibility path detects stalled reads instead of measuring speed.
+The Windows standalone installer/bootstrap use the built-in `curl.exe`.
+
+`CODEX_RELEASES_API_URL` still overrides the metadata source. Even when metadata
+came from Cloudflare, package links are normalized to GitHub and attempted there
+first. Checksums are verified after either path. Failed/partial bootstrap output
+is discarded before the fallback script is executed. No new user config is
+required. The proxy uses a Worker and edge cache, not R2; see
+`scripts/github-proxy/README.md`.
 
 This uses the upstream standalone directory layout under
 `$CODEX_HOME/packages/standalone` (normally `~/.codex/packages/standalone`)
@@ -132,14 +144,13 @@ The reused EP.2 binaries still contain Gitee URLs for update checks and the
 installer bootstrap. The old Gitee installer endpoint is retained and now
 queries GitHub Releases, so `codex update` can download this GitHub package.
 The old Gitee EP.2 release is retained as a migration notice, not a binary host.
-The `ep` branch's Rust update constants now point directly to GitHub; these
-constant changes will take effect in the next compiled release, not in the
-reused EP.2 binaries. No binary patching or version relabeling is performed.
+EP.3 replaces those compiled constants with GitHub-first/Cloudflare-fallback
+entrypoints. This does not change the already-published EP.2 binaries. No binary patching or version relabeling is performed.
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.2`.
-New releases use the tag form `rust-v0.162.1-ep.2`; earlier
+`codex --version` and the TUI header report `0.162.1-ep.3`.
+This release uses `rust-v0.162.1-ep.3`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background

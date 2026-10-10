@@ -3,9 +3,12 @@ source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ✨ Update available! 0.162.1-ep.2 -> 9.9.9                                                                 │
-│ Run powershell -ExecutionPolicy Bypass -c '$env:CODEX_NON_INTERACTIVE=1; irm                               │
-│ https://github.com/Epresin/codex/raw/ep/scripts/install/install.ps1 | iex' to update.                      │
+│ ✨ Update available! 0.162.1-ep.3 -> 9.9.9                                                                 │
+│ Run powershell -ExecutionPolicy Bypass -c '$s = & curl.exe -fsSL --connect-timeout 5 --max-time 8          │
+│ https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.ps1; if ($LASTEXITCODE -ne 0) { │
+│ $s = & curl.exe -fsSL --connect-timeout 5 --max-time 8                                                     │
+│ https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.ps1 }; if ($LASTEXITCODE -ne 0) { exit    │
+│ $LASTEXITCODE }; $env:CODEX_NON_INTERACTIVE=1; ($s -join "`n") | iex' to update.                           │
 │                                                                                                            │
 │ See full release notes:                                                                                    │
 │ https://github.com/Epresin/codex/releases                                                                  │

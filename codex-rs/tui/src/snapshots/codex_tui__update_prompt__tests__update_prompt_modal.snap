@@ -3,12 +3,13 @@ source: tui/src/update_prompt.rs
 expression: terminal.backend()
 ---
 
-  Update available · 0.162.1-ep.2 → 9.9.9
+  Update available · 0.162.1-ep.3 → 9.9.9
   Release notes: https://github.com/Epresin/codex/releases
 
-› 1. Update now (runs `sh -c 'curl -fsSL https://github.com/Epresin/codex/raw/  
-     ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)              
-  2. Skip
-  3. Skip until next version
-
+› 1. Update now (runs `sh -c 's=$(curl -fsSL --connect-timeout 5 --max-time 8   
+     https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/        
+     install.sh) || s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://    
+     gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh) || exit;      
+     printf '"'%s\\n' \""'$s" | CODEX_NON_INTERACTIVE=1 sh'`)                   
+↓
   enter continue · esc skip

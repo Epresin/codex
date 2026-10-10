@@ -12,7 +12,7 @@ use chrono::Utc;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::RouteAwareClientPool;
-use codex_install_context::release::LATEST_RELEASE_URL;
+use codex_install_context::release;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -89,11 +89,30 @@ async fn check_for_update(
 async fn fetch_latest_release_version(
     client_pool: &RouteAwareClientPool,
 ) -> anyhow::Result<String> {
+    if let Ok(Ok(version)) = tokio::time::timeout(
+        release::RELEASE_REQUEST_TIMEOUT,
+        fetch_release_version(client_pool, release::LATEST_RELEASE_URL),
+    )
+    .await
+    {
+        return Ok(version);
+    }
+    tokio::time::timeout(
+        release::RELEASE_REQUEST_TIMEOUT,
+        fetch_release_version(client_pool, release::LATEST_RELEASE_FALLBACK_URL),
+    )
+    .await?
+}
+
+async fn fetch_release_version(
+    client_pool: &RouteAwareClientPool,
+    url: &str,
+) -> anyhow::Result<String> {
     let ReleaseInfo {
         tag_name: latest_tag_name,
         prerelease,
     } = client_pool
-        .get(LATEST_RELEASE_URL)
+        .get(url)
         .header(
             "User-Agent",
             concat!("codex-ep/", env!("CARGO_PKG_VERSION")),

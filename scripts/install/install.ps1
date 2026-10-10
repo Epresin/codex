@@ -15,7 +15,7 @@ $NonInteractive = $env:CODEX_NON_INTERACTIVE -match "^(?i:1|true|yes)$"
 $ReleasesApiUri = if ($env:CODEX_RELEASES_API_URL) {
     $env:CODEX_RELEASES_API_URL.TrimEnd('/')
 } else {
-    "https://gh.mccts.cn/api/repos/Epresin/codex/releases"
+    "https://api.github.com/repos/Epresin/codex/releases"
 }
 
 function Write-Step {
@@ -90,22 +90,29 @@ function Find-ReleaseAssetMetadata {
 
 function Invoke-ReleaseRequest {
     param([string]$Uri, [string]$OutFile)
-    $fallback = if ($Uri.StartsWith("https://gh.mccts.cn/api/")) {
-        $Uri.Replace("https://gh.mccts.cn/api/", "https://api.github.com/")
-    } elseif ($Uri.StartsWith("https://gh.mccts.cn/raw/")) {
-        $Uri.Replace("https://gh.mccts.cn/raw/", "https://raw.githubusercontent.com/")
-    } elseif ($Uri.StartsWith("https://gh.mccts.cn/")) {
-        $Uri.Replace("https://gh.mccts.cn/", "https://github.com/")
+    if ($OutFile) {
+        $Uri = $Uri.Replace("https://gh.mccts.cn/api/", "https://api.github.com/").Replace("https://gh.mccts.cn/raw/", "https://raw.githubusercontent.com/").Replace("https://gh.mccts.cn/", "https://github.com/")
+    }
+    $fallback = if ($Uri.StartsWith("https://api.github.com/repos/Epresin/")) {
+        $Uri.Replace("https://api.github.com/", "https://gh.mccts.cn/api/")
+    } elseif ($Uri.StartsWith("https://raw.githubusercontent.com/Epresin/")) {
+        $Uri.Replace("https://raw.githubusercontent.com/", "https://gh.mccts.cn/raw/")
+    } elseif ($Uri.StartsWith("https://github.com/Epresin/")) {
+        $Uri.Replace("https://github.com/", "https://gh.mccts.cn/")
     }
     foreach ($url in @($Uri, $fallback)) {
-        try {
-            if ($OutFile) { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $OutFile }
-            else { return Invoke-RestMethod -Uri $url }
-            return
-        } catch {
-            if (-not $fallback -or $url -eq $fallback) { throw }
-            Write-WarningStep "Accelerated download unavailable; retrying GitHub."
+        $curlArgs = @("-fsL", "--connect-timeout", "5")
+        if ($OutFile) {
+            $curlArgs += @("-o", $OutFile)
+            if ($url -eq $Uri) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
+        } else { $curlArgs += @("--max-time", "8") }
+        $body = & curl.exe @curlArgs $url
+        if ($LASTEXITCODE -eq 0) {
+            if ($OutFile) { return }
+            return (($body -join "`n") | ConvertFrom-Json)
         }
+        if (-not $fallback -or $url -eq $fallback) { throw "Download failed: $url (curl exit $LASTEXITCODE)." }
+        Write-WarningStep "GitHub download failed or was too slow; retrying Cloudflare."
     }
 }
 

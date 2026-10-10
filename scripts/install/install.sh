@@ -5,7 +5,7 @@ set -eu
 RELEASE="${CODEX_RELEASE:-latest}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 DAEMON_ONLY="${CODEX_INSTALL_DAEMON_ONLY:-0}"
-RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://gh.mccts.cn/api/repos/Epresin/codex/releases}"
+RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://api.github.com/repos/Epresin/codex/releases}"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
@@ -105,20 +105,29 @@ EOF
   done
 }
 
-github_fallback_url() {
+github_url() {
   case "$1" in
     https://gh.mccts.cn/api/*) printf 'https://api.github.com/%s\n' "${1#https://gh.mccts.cn/api/}" ;;
     https://gh.mccts.cn/raw/*) printf 'https://raw.githubusercontent.com/%s\n' "${1#https://gh.mccts.cn/raw/}" ;;
     https://gh.mccts.cn/*) printf 'https://github.com/%s\n' "${1#https://gh.mccts.cn/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+cloudflare_url() {
+  case "$1" in
+    https://api.github.com/repos/Epresin/*) printf 'https://gh.mccts.cn/api/%s\n' "${1#https://api.github.com/}" ;;
+    https://raw.githubusercontent.com/Epresin/*) printf 'https://gh.mccts.cn/raw/%s\n' "${1#https://raw.githubusercontent.com/}" ;;
+    https://github.com/Epresin/*) printf 'https://gh.mccts.cn/%s\n' "${1#https://github.com/}" ;;
     *) return 1 ;;
   esac
 }
 
 request_download() {
   if command -v curl >/dev/null 2>&1; then
-    curl --connect-timeout 15 -fsSL "$1" -o "$2"
+    curl --connect-timeout 5 --max-time "${3:-0}" --speed-time 10 --speed-limit "${4:-0}" -fsSL "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
-    wget --connect-timeout=15 -q -O "$2" "$1"
+    wget --connect-timeout=5 --read-timeout=10 --tries=1 -q -O "$2" "$1"
   else
     echo "curl or wget is required to install Codex." >&2
     return 1
@@ -126,20 +135,21 @@ request_download() {
 }
 
 download_file() {
-  if request_download "$1" "$2"; then return; fi
-  fallback="$(github_fallback_url "$1")" || return 1
-  warn "Accelerated download unavailable; retrying GitHub."
+  primary="$(github_url "$1")"
+  if request_download "$primary" "$2" 0 262144; then return; fi
+  fallback="$(cloudflare_url "$primary")" || return 1
+  warn "GitHub download failed or stayed below 256 KiB/s for 10 seconds; retrying Cloudflare."
   request_download "$fallback" "$2"
 }
 
 download_text() {
-  if text="$(request_download "$1" -)"; then
+  if text="$(request_download "$1" - 8)"; then
     printf '%s\n' "$text"
     return
   fi
-  fallback="$(github_fallback_url "$1")" || return 1
-  warn "Accelerated metadata unavailable; retrying GitHub."
-  request_download "$fallback" -
+  fallback="$(cloudflare_url "$1")" || return 1
+  warn "GitHub metadata failed or timed out; retrying Cloudflare."
+  request_download "$fallback" - 8
 }
 
 parse_release_metadata() {

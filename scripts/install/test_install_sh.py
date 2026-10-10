@@ -12,7 +12,7 @@ import threading
 import unittest
 
 INSTALL_SCRIPT = Path(__file__).with_name("install.sh")
-VERSION = "0.162.1-ep.2"
+VERSION = "0.162.1-ep.3"
 TARGET = "x86_64-unknown-linux-musl"
 ASSET = f"codex-package-{TARGET}.tar.gz"
 
