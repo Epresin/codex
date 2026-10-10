@@ -1,15 +1,11 @@
 #[cfg(any(not(debug_assertions), test))]
 pub(crate) fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    match (parse_version(latest), parse_version(current)) {
-        (Some(l), Some(c)) => Some(l > c),
-        _ => None,
-    }
+    codex_install_context::release::is_newer(latest, current)
 }
 
 #[cfg(any(not(debug_assertions), test))]
 pub(crate) fn extract_version_from_latest_tag(latest_tag_name: &str) -> anyhow::Result<String> {
-    latest_tag_name
-        .strip_prefix("rust-v")
+    codex_install_context::release::version_from_tag(latest_tag_name)
         .map(str::to_owned)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse latest tag name '{latest_tag_name}'"))
 }
@@ -45,11 +41,8 @@ pub(crate) fn server_version_notice_kind(
 
 #[cfg(any(not(debug_assertions), test))]
 fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
-    let mut iter = v.trim().split('.');
-    let maj = iter.next()?.parse::<u64>().ok()?;
-    let min = iter.next()?.parse::<u64>().ok()?;
-    let pat = iter.next()?.parse::<u64>().ok()?;
-    Some((maj, min, pat))
+    let version = semver::Version::parse(v.trim()).ok()?;
+    Some((version.major, version.minor, version.patch))
 }
 
 #[cfg(test)]
@@ -71,9 +64,11 @@ mod tests {
     }
 
     #[test]
-    fn prerelease_version_is_not_considered_newer() {
-        assert_eq!(is_newer("0.11.0-beta.1", "0.11.0"), None);
-        assert_eq!(is_newer("1.0.0-rc.1", "1.0.0"), None);
+    fn prerelease_versions_use_semver_order() {
+        assert_eq!(is_newer("0.11.0-beta.1", "0.11.0"), Some(false));
+        assert_eq!(is_newer("1.0.0-rc.1", "1.0.0"), Some(false));
+        assert_eq!(is_newer("0.162.1-ep.2", "0.162.1-ep.1"), Some(true));
+        assert_eq!(is_newer("0.162.1-ep.10", "0.162.1-ep.2"), Some(true));
     }
 
     #[test]

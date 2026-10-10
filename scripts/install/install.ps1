@@ -12,15 +12,11 @@ if ([string]::IsNullOrWhiteSpace($Release)) {
 }
 
 $NonInteractive = $env:CODEX_NON_INTERACTIVE -match "^(?i:1|true|yes)$"
-$DefaultPreferReleasesOpenAICom = $true
-$PreferReleasesOpenAICom = if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM)) {
-    $DefaultPreferReleasesOpenAICom
+$ReleasesApiUri = if ($env:CODEX_RELEASES_API_URL) {
+    $env:CODEX_RELEASES_API_URL.TrimEnd('/')
 } else {
-    $env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM -match "^(?i:1|true|yes)$"
+    "https://gitee.com/api/v5/repos/epresin/codex/releases"
 }
-$ReleasesBaseUri = "https://releases.openai.com/codex"
-$ReleasesMetadataTimeoutSec = 30
-$ReleasesAssetTimeoutSec = 300
 
 function Write-Step {
     param(
@@ -80,131 +76,39 @@ function Assert-ValidReleaseVersion {
         [string]$Version
     )
 
-    if ($Version -cne "latest" -and $Version -cnotmatch "^[0-9]+\.[0-9]+\.[0-9]+(?:-alpha(?:\.[0-9]+){0,2}|-beta(?:\.[0-9]+)?)?$") {
-        throw "Invalid Codex release version: $Version. Expected latest or x.y.z[-alpha[.N[.M]]|-beta[.N]]."
+    if ($Version -cne "latest" -and $Version -cnotmatch "^[0-9]+\.[0-9]+\.[0-9]+(?:-alpha(?:\.[0-9]+){0,2}|-beta(?:\.[0-9]+)?|-ep(?:\.[0-9]+)?)?$") {
+        throw "Invalid Codex release version: $Version. Expected latest or x.y.z[-alpha[.N[.M]]|-beta[.N]|-ep[.N]]."
     }
 }
 
 function Find-ReleaseAssetMetadata {
-    param(
-        [string]$AssetName,
-        [object]$ReleaseMetadata,
-        [string]$Url = $null,
-        [string]$FallbackUrl = $null
-    )
-
+    param([string]$AssetName, [object]$ReleaseMetadata)
     $asset = $ReleaseMetadata.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
-    if ($null -eq $asset) {
-        return $null
-    }
-
-    $digestMatch = [regex]::Match([string]$asset.digest, "^sha256:([0-9a-fA-F]{64})$")
-    if (-not $digestMatch.Success) {
-        throw "Could not find SHA-256 digest for release asset $AssetName."
-    }
-
-    return [PSCustomObject]@{
-        Url = if ([string]::IsNullOrWhiteSpace($Url)) { $asset.browser_download_url } else { $Url }
-        FallbackUrl = $FallbackUrl
-        Sha256 = $digestMatch.Groups[1].Value.ToLowerInvariant()
-    }
+    if ($null -eq $asset) { return $null }
+    return [PSCustomObject]@{ Url = $asset.browser_download_url }
 }
 
-function Invoke-WebRequestWithFallback {
-    param(
-        [object]$Metadata,
-        [string]$OutFile,
-        [string]$ExpectedDigest,
-        [string]$AssetName,
-        [string]$ReleaseVersion,
-        [string]$RequiredManifestAsset
-    )
-
-    try {
-        if ($Metadata.Url.StartsWith("$ReleasesBaseUri/", [System.StringComparison]::OrdinalIgnoreCase)) {
-            Invoke-WebRequest -UseBasicParsing -Uri $Metadata.Url -OutFile $OutFile -TimeoutSec $ReleasesAssetTimeoutSec
-        } else {
-            Invoke-WebRequest -UseBasicParsing -Uri $Metadata.Url -OutFile $OutFile
-        }
+function Invoke-ReleaseDownload {
+    param([object]$Metadata, [string]$OutFile, [string]$ExpectedDigest)
+    Invoke-WebRequest -UseBasicParsing -Uri $Metadata.Url -OutFile $OutFile
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedDigest)) {
         Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest
-        if (-not [string]::IsNullOrWhiteSpace($RequiredManifestAsset)) {
-            $null = Get-PackageArchiveDigest -ManifestPath $OutFile -AssetName $RequiredManifestAsset
-        }
-    } catch {
-        if ([string]::IsNullOrWhiteSpace($Metadata.FallbackUrl)) {
-            throw
-        }
-        Write-WarningStep "Could not download or verify $($Metadata.Url); retrying from GitHub Releases."
-        Invoke-WebRequest -UseBasicParsing -Uri $Metadata.FallbackUrl -OutFile $OutFile
-        try {
-            Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest
-            if (-not [string]::IsNullOrWhiteSpace($RequiredManifestAsset)) {
-                $null = Get-PackageArchiveDigest -ManifestPath $OutFile -AssetName $RequiredManifestAsset
-            }
-        } catch {
-            $githubRelease = Resolve-ReleaseFromGitHub -NormalizedVersion $ReleaseVersion
-            $githubAssetMetadata = Find-ReleaseAssetMetadata -AssetName $AssetName -ReleaseMetadata $githubRelease.Metadata
-            if ($null -eq $githubAssetMetadata) {
-                throw "Could not find GitHub release metadata for asset $AssetName."
-            }
-            Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $githubAssetMetadata.Sha256
-            if (-not [string]::IsNullOrWhiteSpace($RequiredManifestAsset)) {
-                $null = Get-PackageArchiveDigest -ManifestPath $OutFile -AssetName $RequiredManifestAsset
-            }
-        }
     }
 }
 
 function Resolve-ReleaseAssetSelection {
-    param(
-        [object]$ResolvedRelease,
-        [string]$Target,
-        [string]$NpmTag
-    )
-
-    $version = $ResolvedRelease.Version
-    $releaseMetadata = $ResolvedRelease.Metadata
+    param([object]$ResolvedRelease, [string]$Target)
     $packageAsset = "codex-package-$Target.tar.gz"
-    $checksumAsset = "codex-package_SHA256SUMS"
-    $packageUrl = $null
-    $packageFallbackUrl = $null
-    $checksumUrl = $null
-    $checksumFallbackUrl = $null
-    if ($ResolvedRelease.Source -eq "ReleasesOpenAICom") {
-        $packageUrl = "$ReleasesBaseUri/releases/$version/$packageAsset"
-        $packageFallbackUrl = "https://github.com/openai/codex/releases/download/rust-v$version/$packageAsset"
-        $checksumUrl = "$ReleasesBaseUri/releases/$version/$checksumAsset"
-        $checksumFallbackUrl = "https://github.com/openai/codex/releases/download/rust-v$version/$checksumAsset"
+    $packageMetadata = Find-ReleaseAssetMetadata -AssetName $packageAsset -ReleaseMetadata $ResolvedRelease.Metadata
+    $checksumMetadata = Find-ReleaseAssetMetadata -AssetName "codex-package_SHA256SUMS" -ReleaseMetadata $ResolvedRelease.Metadata
+    if ($null -eq $packageMetadata -or $null -eq $checksumMetadata) {
+        throw "Could not find the standard Codex package for $Target in release $($ResolvedRelease.Version)."
     }
-
-    $packageMetadata = Find-ReleaseAssetMetadata -AssetName $packageAsset -ReleaseMetadata $releaseMetadata -Url $packageUrl -FallbackUrl $packageFallbackUrl
-    $checksumMetadata = Find-ReleaseAssetMetadata -AssetName $checksumAsset -ReleaseMetadata $releaseMetadata -Url $checksumUrl -FallbackUrl $checksumFallbackUrl
-    if ($null -ne $packageMetadata -and $null -ne $checksumMetadata) {
-        return [PSCustomObject]@{
-            PackageAsset = $packageAsset
-            PackageMetadata = $packageMetadata
-            ChecksumMetadata = $checksumMetadata
-            InstallLayout = "Package"
-        }
-    }
-
-    $packageAsset = "codex-npm-$NpmTag-$version.tgz"
-    $packageUrl = $null
-    $packageFallbackUrl = $null
-    if ($ResolvedRelease.Source -eq "ReleasesOpenAICom") {
-        $packageUrl = "$ReleasesBaseUri/releases/$version/$packageAsset"
-        $packageFallbackUrl = "https://github.com/openai/codex/releases/download/rust-v$version/$packageAsset"
-    }
-    $packageMetadata = Find-ReleaseAssetMetadata -AssetName $packageAsset -ReleaseMetadata $releaseMetadata -Url $packageUrl -FallbackUrl $packageFallbackUrl
-    if ($null -eq $packageMetadata) {
-        throw "Could not find Codex package or platform npm release assets for Codex $version."
-    }
-
     return [PSCustomObject]@{
         PackageAsset = $packageAsset
         PackageMetadata = $packageMetadata
-        ChecksumMetadata = $null
-        InstallLayout = "LegacyPlatformNpm"
+        ChecksumMetadata = $checksumMetadata
+        InstallLayout = "Package"
     }
 }
 
@@ -339,79 +243,19 @@ function Resolve-VersionFromReleaseMetadata {
     return $resolvedVersion
 }
 
-function Resolve-ReleaseFromGitHub {
-    param(
-        [string]$NormalizedVersion
-    )
-
-    if ($NormalizedVersion -eq "latest") {
-        $requestedRelease = "latest"
-        $metadataUri = "https://api.github.com/repos/openai/codex/releases/latest"
-    } else {
-        $resolvedVersion = $NormalizedVersion
-        $requestedRelease = $resolvedVersion
-        $metadataUri = "https://api.github.com/repos/openai/codex/releases/tags/rust-v$resolvedVersion"
-    }
-
-    try {
-        $releaseMetadata = Invoke-RestMethod -Uri $metadataUri
-    } catch {
-        throw "Could not fetch GitHub release metadata for Codex $requestedRelease. GitHub API may be unavailable or rate limited. $($_.Exception.Message)"
-    }
-
-    if ($NormalizedVersion -eq "latest") {
-        $resolvedVersion = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
-    }
-
-    return [PSCustomObject]@{
-        Version = $resolvedVersion
-        Metadata = $releaseMetadata
-        Source = "GitHub"
-    }
-}
-
-function Resolve-ReleaseFromReleases {
-    param(
-        [string]$NormalizedVersion
-    )
-
-    $metadataUri = if ($NormalizedVersion -eq "latest") {
-        "$ReleasesBaseUri/channels/latest"
-    } else {
-        "$ReleasesBaseUri/releases/$NormalizedVersion/release.json"
-    }
-    try {
-        $metadataResponse = Invoke-WebRequest -UseBasicParsing -Uri $metadataUri -TimeoutSec $ReleasesMetadataTimeoutSec
-        $releaseMetadata = [string]$metadataResponse.Content | ConvertFrom-Json -ErrorAction Stop
-        $resolvedVersion = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
-        if ($NormalizedVersion -ne "latest" -and $resolvedVersion -cne $NormalizedVersion) {
-            throw "Release metadata version did not match requested Codex version $NormalizedVersion."
-        }
-        $resolvedRelease = [PSCustomObject]@{
-            Version = $resolvedVersion
-            Metadata = $releaseMetadata
-            Source = "ReleasesOpenAICom"
-        }
-        $null = Resolve-ReleaseAssetSelection -ResolvedRelease $resolvedRelease -Target $target -NpmTag $npmTag
-    } catch {
-        return $null
-    }
-    return $resolvedRelease
-}
-
 function Resolve-Release {
     $normalizedVersion = Normalize-Version -RawVersion $Release
     Assert-ValidReleaseVersion -Version $normalizedVersion
-
-    if ($PreferReleasesOpenAICom) {
-        $release = Resolve-ReleaseFromReleases -NormalizedVersion $normalizedVersion
-        if ($null -ne $release) {
-            return $release
-        }
-        Write-WarningStep "releases.openai.com is unavailable; falling back to GitHub Releases."
+    $metadataUri = if ($normalizedVersion -eq "latest") {
+        "$ReleasesApiUri/latest"
+    } else {
+        "$ReleasesApiUri/tags/rust-v$normalizedVersion"
     }
-
-    return Resolve-ReleaseFromGitHub -NormalizedVersion $normalizedVersion
+    $releaseMetadata = Invoke-RestMethod -Uri $metadataUri
+    return [PSCustomObject]@{
+        Version = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
+        Metadata = $releaseMetadata
+    }
 }
 
 function Get-VersionFromBinary {
@@ -978,7 +822,7 @@ $conflictingInstall = if ($daemonOnly) { $null } else { Get-ConflictingInstall -
 $oldStandaloneBackup = $null
 
 $checksumAsset = "codex-package_SHA256SUMS"
-$assetSelection = Resolve-ReleaseAssetSelection -ResolvedRelease $resolvedRelease -Target $target -NpmTag $npmTag
+$assetSelection = Resolve-ReleaseAssetSelection -ResolvedRelease $resolvedRelease -Target $target
 $packageAsset = $assetSelection.PackageAsset
 $packageMetadata = $assetSelection.PackageMetadata
 $checksumMetadata = $assetSelection.ChecksumMetadata
@@ -1056,46 +900,18 @@ try {
             $stagingDir = Join-Path $releasesDir ".staging.$releaseName.$PID"
 
             Write-Step "Downloading Codex CLI"
-            if ($installLayout -eq "Package") {
-                Invoke-WebRequestWithFallback -Metadata $checksumMetadata -OutFile $checksumPath -ExpectedDigest $checksumMetadata.Sha256 -AssetName $checksumAsset -ReleaseVersion $resolvedVersion -RequiredManifestAsset $packageAsset
-                $expectedPackageDigest = Get-PackageArchiveDigest -ManifestPath $checksumPath -AssetName $packageAsset
-            } else {
-                $expectedPackageDigest = $packageMetadata.Sha256
-            }
-            Invoke-WebRequestWithFallback -Metadata $packageMetadata -OutFile $archivePath -ExpectedDigest $expectedPackageDigest -AssetName $packageAsset -ReleaseVersion $resolvedVersion
+            Invoke-ReleaseDownload -Metadata $checksumMetadata -OutFile $checksumPath
+            $expectedPackageDigest = Get-PackageArchiveDigest -ManifestPath $checksumPath -AssetName $packageAsset
+            Invoke-ReleaseDownload -Metadata $packageMetadata -OutFile $archivePath -ExpectedDigest $expectedPackageDigest
 
             New-Item -ItemType Directory -Force -Path $releasesDir | Out-Null
             if (Test-Path -LiteralPath $stagingDir) {
                 Remove-Item -LiteralPath $stagingDir -Recurse -Force
             }
             New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-            if ($installLayout -eq "Package") {
-                tar -xzf $archivePath -C $stagingDir
-                if (-not (Test-PackageContentsAreComplete -PackageDir $stagingDir)) {
-                    throw "Downloaded Codex package archive did not contain the expected package layout."
-                }
-            } else {
-                $extractDir = Join-Path $tempDir "extract"
-                New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-                tar -xzf $archivePath -C $extractDir
-
-                $vendorRoot = Join-Path $extractDir "package/vendor/$target"
-                $resourcesDir = Join-Path $stagingDir "codex-resources"
-                New-Item -ItemType Directory -Force -Path $resourcesDir | Out-Null
-                $copyMap = @{
-                    "codex/codex.exe" = "codex.exe"
-                    "codex/codex-command-runner.exe" = "codex-resources\codex-command-runner.exe"
-                    "codex/codex-windows-sandbox-setup.exe" = "codex-resources\codex-windows-sandbox-setup.exe"
-                    "path/rg.exe" = "codex-resources\rg.exe"
-                }
-
-                foreach ($relativeSource in $copyMap.Keys) {
-                    Copy-Item -LiteralPath (Join-Path $vendorRoot $relativeSource) -Destination (Join-Path $stagingDir $copyMap[$relativeSource])
-                }
-
-                if (-not (Test-LegacyPlatformNpmContentsAreComplete -PackageDir $stagingDir)) {
-                    throw "Downloaded Codex npm archive did not contain the expected legacy platform package layout."
-                }
+            tar -xzf $archivePath -C $stagingDir
+            if (-not (Test-PackageContentsAreComplete -PackageDir $stagingDir)) {
+                throw "Downloaded Codex package archive did not contain the expected package layout."
             }
 
             if (Test-Path -LiteralPath $releaseDir) {

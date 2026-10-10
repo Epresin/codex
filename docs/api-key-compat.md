@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.1`.
+The current EP release version is `0.162.1-ep.2`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -22,8 +22,10 @@ The upstream Apache-2.0 license and NOTICE are preserved.
    Windows clipboard through PowerShell as base64 PNG bytes and save the image
    locally in WSL, without mapping Windows temporary-file paths. Existing image
    shortcuts and ordinary text paste are preserved.
-5. Identify fork builds with an `-ep.N` version suffix and disable official
-   startup update checks by default. No separate updater is introduced.
+5. Identify fork builds with an `-ep.N` version suffix. All update entrypoints
+   use this repository's Release API and the upstream standalone installer.
+   Package-manager update actions and OpenAI CDN/npm-archive fallback paths
+   are removed; model inference configuration is unrelated to updates.
 
 Search, image handling, compaction, and HTTP streaming reuse the upstream
 implementations. The WSL patch only changes local clipboard input.
@@ -92,20 +94,67 @@ Responses wire API, authentication requirement, and standalone search capability
 remain unchanged. No new end-to-end gateway or corporate-proxy acceptance was
 run for this transport-default change.
 
+## Install and update
+
+The repository and its release assets are public. Install the Linux package
+with the fork's standalone installer (no Gitee token is required):
+
+```sh
+curl -fsSL https://gitee.com/epresin/codex/raw/main/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+```
+
+This uses the upstream standalone directory layout under
+`$CODEX_HOME/packages/standalone` (normally `~/.codex/packages/standalone`)
+and places the visible command in `~/.local/bin`. It preserves existing
+Codex configuration, API-key authentication, and old version directories.
+Run `codex update` for subsequent upgrades; startup update prompts use the
+same installer. Set `check_for_update_on_startup = false` to disable prompts.
+Only targets with uploaded release assets can be installed. This release
+provides Linux x86_64 musl; the Windows installer shares the same protocol,
+but no Windows build is published by this release.
+
 ## Version identity and update checks
 
-`codex --version` and the TUI header both use the workspace package version,
-so this build identifies itself as `0.162.1-ep.1`, not official `0.162.1`.
+`codex --version` and the TUI header report `0.162.1-ep.2`.
+New releases use the tag form `rust-v0.162.1-ep.2`; earlier
+`api-key-compat-v...` tags remain unchanged.
 
-Upstream startup checks query the OpenAI GitHub latest-release endpoint (and
-also check npm publication readiness for npm-like installs), caching results
-in `$CODEX_HOME/version.json` for about 20 hours. Homebrew uses its cask API.
-These checks do not use the configured inference Base URL or model gateway.
-The upstream update actions install official packages and would replace this fork.
+The startup prompt, `codex update`, update diagnostics, and the background
+server's installer URL point to EP, never the official distribution.
+The existing 20-hour cache and confirmation UI are retained. The cache is
+`$CODEX_HOME/ep-version.json`, separate from old official version metadata.
+Checks are enabled by default; explicit user configuration takes precedence.
+Semantic-version comparison recognizes numeric `-ep.N` revisions.
+Background-service management and local CLI-to-daemon synchronization are
+preserved, rather than deleting functionality unrelated to release discovery.
 
-EP builds default `check_for_update_on_startup` to `false`. Existing explicit
-configuration still takes precedence. Download updates from this fork's Gitee
-releases; no Gitee token, private update feed, or update service is embedded.
+The installers use the shared GitHub/Gitee Release fields `tag_name`,
+`assets[].name`, and `assets[].browser_download_url`. They verify archives
+using `codex-package_SHA256SUMS`, without requiring GitHub-only asset digests.
+To use another compatible repository, the installer accepts
+`CODEX_RELEASES_API_URL` (the `/repos/OWNER/REPO/releases` API base).
+Rust entrypoint URLs are centralized in `codex-rs/install-context/src/release.rs`.
+No account tokens or model gateway keys are embedded in the update path.
+
+## Standard release packaging
+
+After compiling the CLI, code-mode host, and platform helpers, call:
+
+```sh
+bash scripts/release-ep.sh x86_64-unknown-linux-musl /path/to/release/binaries /path/to/artifacts
+```
+
+This thin wrapper calls the unchanged upstream
+`.github/scripts/build-codex-package-archive.sh`, which in turn uses
+`scripts/build_codex_package.py`. Extra arguments are forwarded to the
+upstream wrapper, for example `--rg-bin`, `--zsh-bin`, or prepared voice inputs.
+It outputs `codex-package-TARGET.tar.gz`, `codex-package-TARGET.tar.zst`,
+`codex-package_SHA256SUMS`, installer scripts, and the source commit.
+Archive roots directly contain `bin/`, `codex-path/`, `codex-resources/`,
+and `codex-package.json`; there is no extra enclosing version directory.
+The base standard package includes the pinned ripgrep and zsh helpers.
+Optional voice-runtime preparation remains the upstream release pipeline's
+separate step; this fork does not add or maintain a second packaging engine.
 
 ## 0.162.1 upstream merge
 
@@ -114,6 +163,15 @@ fix that limits daemon feature compatibility checks to explicit CLI overrides.
 Only the workspace version line conflicted during the merge; it was aligned
 with 0.162.1 before the separate EP version commit. No functional patch conflicted.
 External dependency versions were not upgraded by this fork.
+
+## EP updater verification
+
+For 0.162.1-ep.2, 20 focused TUI update/version tests passed and the four
+changed update UI snapshots were refreshed. Two isolated shell-installer
+checks passed: GitHub-style metadata with asset digests and Gitee-style
+metadata without them, including EP versions and configuration preservation.
+Both installer scripts passed syntax checks. These are targeted checks, not
+a claim that the complete upstream test suite was run.
 
 ## Maintaining the fork
 
