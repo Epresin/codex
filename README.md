@@ -17,10 +17,11 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 This is the public `Epresin/codex` fork of `openai/codex`. Our maintained branch
 is `ep`; `main` retains the upstream line. Install the EP Linux x86_64 package
-(including WSL) from this repository's GitHub Releases:
+(including WSL) from this repository's GitHub Releases through the Cloudflare
+download proxy (the installer falls back to GitHub if the proxy fails):
 
 ```sh
-curl -fsSL https://github.com/Epresin/codex/raw/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+curl -fsSL https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
 ```
 
 Then run `codex --version` and `codex`. The current release is `0.162.1-ep.2`.

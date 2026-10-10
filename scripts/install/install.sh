@@ -5,7 +5,7 @@ set -eu
 RELEASE="${CODEX_RELEASE:-latest}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 DAEMON_ONLY="${CODEX_INSTALL_DAEMON_ONLY:-0}"
-RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://api.github.com/repos/Epresin/codex/releases}"
+RELEASES_API_URL="${CODEX_RELEASES_API_URL:-https://gh.mccts.cn/api/repos/Epresin/codex/releases}"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
@@ -105,29 +105,41 @@ EOF
   done
 }
 
-download_file() {
-  url="$1"
-  output="$2"
+github_fallback_url() {
+  case "$1" in
+    https://gh.mccts.cn/api/*) printf 'https://api.github.com/%s\n' "${1#https://gh.mccts.cn/api/}" ;;
+    https://gh.mccts.cn/raw/*) printf 'https://raw.githubusercontent.com/%s\n' "${1#https://gh.mccts.cn/raw/}" ;;
+    https://gh.mccts.cn/*) printf 'https://github.com/%s\n' "${1#https://gh.mccts.cn/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+request_download() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$output"
+    curl --connect-timeout 15 -fsSL "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url"
+    wget --connect-timeout=15 -q -O "$2" "$1"
   else
     echo "curl or wget is required to install Codex." >&2
-    exit 1
+    return 1
   fi
 }
 
+download_file() {
+  if request_download "$1" "$2"; then return; fi
+  fallback="$(github_fallback_url "$1")" || return 1
+  warn "Accelerated download unavailable; retrying GitHub."
+  request_download "$fallback" "$2"
+}
+
 download_text() {
-  url="$1"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q -O - "$url"
-  else
-    echo "curl or wget is required to install Codex." >&2
-    exit 1
+  if text="$(request_download "$1" -)"; then
+    printf '%s\n' "$text"
+    return
   fi
+  fallback="$(github_fallback_url "$1")" || return 1
+  warn "Accelerated metadata unavailable; retrying GitHub."
+  request_download "$fallback" -
 }
 
 parse_release_metadata() {

@@ -100,8 +100,14 @@ The repository and its release assets are public. Install the Linux package
 with the fork's standalone installer (no GitHub token is required):
 
 ```sh
-curl -fsSL https://github.com/Epresin/codex/raw/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
+curl -fsSL https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh | CODEX_NON_INTERACTIVE=1 sh
 ```
+
+The installer prefers `gh.mccts.cn` for release metadata and downloads and
+falls back to GitHub if an accelerated request fails. `CODEX_RELEASES_API_URL`
+still overrides the metadata source. The proxy uses a Worker and edge cache,
+not R2; see `scripts/github-proxy/README.md`. No Rust rebuild is needed for
+this installer change. The EP.2 binary bootstrap limitation below still applies.
 
 This uses the upstream standalone directory layout under
 `$CODEX_HOME/packages/standalone` (normally `~/.codex/packages/standalone`)

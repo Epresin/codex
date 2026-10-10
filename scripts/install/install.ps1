@@ -15,7 +15,7 @@ $NonInteractive = $env:CODEX_NON_INTERACTIVE -match "^(?i:1|true|yes)$"
 $ReleasesApiUri = if ($env:CODEX_RELEASES_API_URL) {
     $env:CODEX_RELEASES_API_URL.TrimEnd('/')
 } else {
-    "https://api.github.com/repos/Epresin/codex/releases"
+    "https://gh.mccts.cn/api/repos/Epresin/codex/releases"
 }
 
 function Write-Step {
@@ -88,9 +88,30 @@ function Find-ReleaseAssetMetadata {
     return [PSCustomObject]@{ Url = $asset.browser_download_url }
 }
 
+function Invoke-ReleaseRequest {
+    param([string]$Uri, [string]$OutFile)
+    $fallback = if ($Uri.StartsWith("https://gh.mccts.cn/api/")) {
+        $Uri.Replace("https://gh.mccts.cn/api/", "https://api.github.com/")
+    } elseif ($Uri.StartsWith("https://gh.mccts.cn/raw/")) {
+        $Uri.Replace("https://gh.mccts.cn/raw/", "https://raw.githubusercontent.com/")
+    } elseif ($Uri.StartsWith("https://gh.mccts.cn/")) {
+        $Uri.Replace("https://gh.mccts.cn/", "https://github.com/")
+    }
+    foreach ($url in @($Uri, $fallback)) {
+        try {
+            if ($OutFile) { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $OutFile }
+            else { return Invoke-RestMethod -Uri $url }
+            return
+        } catch {
+            if (-not $fallback -or $url -eq $fallback) { throw }
+            Write-WarningStep "Accelerated download unavailable; retrying GitHub."
+        }
+    }
+}
+
 function Invoke-ReleaseDownload {
     param([object]$Metadata, [string]$OutFile, [string]$ExpectedDigest)
-    Invoke-WebRequest -UseBasicParsing -Uri $Metadata.Url -OutFile $OutFile
+    Invoke-ReleaseRequest -Uri $Metadata.Url -OutFile $OutFile
     if (-not [string]::IsNullOrWhiteSpace($ExpectedDigest)) {
         Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest
     }
@@ -251,7 +272,7 @@ function Resolve-Release {
     } else {
         "$ReleasesApiUri/tags/rust-v$normalizedVersion"
     }
-    $releaseMetadata = Invoke-RestMethod -Uri $metadataUri
+    $releaseMetadata = Invoke-ReleaseRequest -Uri $metadataUri
     return [PSCustomObject]@{
         Version = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
         Metadata = $releaseMetadata
