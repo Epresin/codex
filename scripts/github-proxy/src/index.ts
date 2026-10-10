@@ -129,7 +129,7 @@ export default {
 
     const privateResponse = /private|no-store/i.test(upstream.headers.get("Cache-Control") || "");
     if (cacheable && upstream.status === 200 && !privateResponse) {
-      const file = target.hostname === "codeload.github.com" || /\/releases\/download\//.test(target.pathname);
+      const file = target.hostname === "github.com" && /\/releases\/download\//.test(target.pathname);
       response.headers.set("Cache-Control", "public, max-age=" + (file ? 86400 : 60));
       ctx.waitUntil(caches.default.put(cacheKey, response.clone()).catch(() => {}));
     } else {

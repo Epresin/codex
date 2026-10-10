@@ -28,7 +28,7 @@ Only HTTPS Git is handled, not SSH or Git LFS.
 
 Git traffic, writes, authenticated responses, and range requests are not cached.
 Public full downloads use the edge Cache API (one day for versioned release
-files/source archives, one minute for API/raw files). `X-GitHub-Cache` reports
+files, one minute for API/raw files/source archives). `X-GitHub-Cache` reports
 `HIT`, `MISS`, or `BYPASS`. The cache is opportunistic and local to each edge
 location, not a permanent file store. Files are streamed, not buffered in memory.
 Upstream private/no-store responses are not cached.
