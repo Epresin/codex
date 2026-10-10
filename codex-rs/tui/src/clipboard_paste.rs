@@ -2,6 +2,8 @@
 
 pub(crate) mod text;
 
+#[cfg(target_os = "linux")]
+use base64::Engine;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::Builder;
@@ -120,49 +122,30 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
     ))
 }
 
-/// Convenience: write to a temp file and return its path + info.
+/// Read clipboard PNG bytes and persist them in a temporary file on the TUI host.
 #[cfg(not(target_os = "android"))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
-    // First attempt: read image from system clipboard via arboard (native paths or image data).
-    match paste_image_as_png() {
-        Ok((png, info)) => {
-            // Create a unique temporary file with a .png suffix to avoid collisions.
-            let tmp = Builder::new()
-                .prefix("codex-clipboard-")
-                .suffix(".png")
-                .tempfile()
-                .map_err(|e| PasteImageError::IoError(e.to_string()))?;
-            std::fs::write(tmp.path(), &png)
-                .map_err(|e| PasteImageError::IoError(e.to_string()))?;
-            // Persist the file (so it remains after the handle is dropped) and return its PathBuf.
-            let (_file, path) = tmp
-                .keep()
-                .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
-            Ok((path, info))
-        }
-        Err(e) => {
-            #[cfg(target_os = "linux")]
-            {
-                try_wsl_clipboard_fallback(&e).or(Err(e))
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                Err(e)
-            }
-        }
-    }
+    let image = paste_image_as_png();
+    #[cfg(target_os = "linux")]
+    let image = image.or_else(|error| try_wsl_clipboard_fallback(&error));
+    let (png, info) = image?;
+    let tmp = Builder::new()
+        .prefix("codex-clipboard-")
+        .suffix(".png")
+        .tempfile()
+        .map_err(|e| PasteImageError::IoError(e.to_string()))?;
+    std::fs::write(tmp.path(), &png).map_err(|e| PasteImageError::IoError(e.to_string()))?;
+    let (_file, path) = tmp
+        .keep()
+        .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
+    Ok((path, info))
 }
 
-/// Attempt WSL fallback for clipboard image paste.
-///
-/// If clipboard is unavailable (common under WSL because arboard cannot access
-/// the Windows clipboard), attempt a WSL fallback that calls PowerShell on the
-/// Windows side to write the clipboard image to a temporary file, then return
-/// the corresponding WSL path.
+/// Read Windows clipboard PNG bytes over stdout, without a cross-filesystem handoff.
 #[cfg(target_os = "linux")]
 fn try_wsl_clipboard_fallback(
     error: &PasteImageError,
-) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
+) -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     use PasteImageError::ClipboardUnavailable;
     use PasteImageError::NoImage;
 
@@ -171,62 +154,39 @@ fn try_wsl_clipboard_fallback(
     }
 
     tracing::debug!("attempting Windows PowerShell clipboard fallback");
-    let Some(win_path) = try_dump_windows_clipboard_image() else {
+    let Some(png) = try_read_windows_clipboard_image() else {
         return Err(error.clone());
     };
-
-    tracing::debug!("powershell produced path: {}", win_path);
-    let Some(mapped_path) = convert_windows_path_to_wsl(&win_path) else {
-        return Err(error.clone());
+    let image =
+        image::load_from_memory(&png).map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
+    let info = PastedImageInfo {
+        width: image.width(),
+        height: image.height(),
+        encoded_format: EncodedImageFormat::Png,
     };
-
-    let Ok((w, h)) = image::image_dimensions(&mapped_path) else {
-        return Err(error.clone());
-    };
-
-    // Return the mapped path directly without copying.
-    // The file will be read and base64-encoded during serialization.
-    Ok((
-        mapped_path,
-        PastedImageInfo {
-            width: w,
-            height: h,
-            encoded_format: EncodedImageFormat::Png,
-        },
-    ))
+    Ok((png, info))
 }
 
-/// Try to call a Windows PowerShell command (several common names) to save the
-/// clipboard image to a temporary PNG and return the Windows path to that file.
-/// Returns None if no command succeeded or no image was present.
+/// Windows PowerShell encodes the clipboard image in memory and returns base64.
 #[cfg(target_os = "linux")]
-fn try_dump_windows_clipboard_image() -> Option<String> {
-    // Powershell script: save image from clipboard to a temp png and print the path.
-    // Force UTF-8 output to avoid encoding issues between powershell.exe (UTF-16LE default)
-    // and pwsh (UTF-8 default).
-    let script = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $img = Get-Clipboard -Format Image; if ($img -ne $null) { $p=[System.IO.Path]::GetTempFileName(); $p = [System.IO.Path]::ChangeExtension($p,'png'); $img.Save($p,[System.Drawing.Imaging.ImageFormat]::Png); Write-Output $p } else { exit 1 }"#;
+fn try_read_windows_clipboard_image() -> Option<Vec<u8>> {
+    let script = r#"Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($null -eq $img) { exit 1 }; $ms = New-Object System.IO.MemoryStream; $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); [System.Convert]::ToBase64String($ms.ToArray())"#;
 
     for cmd in ["powershell.exe", "pwsh", "powershell"] {
         match std::process::Command::new(cmd)
-            .args(["-NoProfile", "-Command", script])
+            .args(["-NoProfile", "-NonInteractive", "-STA", "-Command", script])
             .output()
         {
-            // Executing PowerShell command
-            Ok(output) => {
-                if output.status.success() {
-                    // Decode as UTF-8 (forced by the script above).
-                    let win_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !win_path.is_empty() {
-                        tracing::debug!("{} saved clipboard image to {}", cmd, win_path);
-                        return Some(win_path);
-                    }
-                } else {
-                    tracing::debug!("{} returned non-zero status", cmd);
+            Ok(output) if output.status.success() => {
+                let encoded = String::from_utf8_lossy(&output.stdout);
+                if !encoded.trim().is_empty() {
+                    return base64::engine::general_purpose::STANDARD
+                        .decode(encoded.trim())
+                        .ok();
                 }
             }
-            Err(err) => {
-                tracing::debug!("{} not executable: {}", cmd, err);
-            }
+            Ok(_) => tracing::debug!("{cmd} returned non-zero status"),
+            Err(err) => tracing::debug!("{cmd} not executable: {err}"),
         }
     }
     None

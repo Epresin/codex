@@ -1058,6 +1058,18 @@ impl App {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, app_server, key_event).await;
                 }
+                // Windows Terminal can send an empty bracketed paste for image-only data.
+                #[cfg(target_os = "linux")]
+                TuiEvent::Paste(pasted)
+                    if pasted.is_empty()
+                        && crate::clipboard_paste::is_probably_wsl()
+                        && self.chat_widget.no_modal_or_popup_active() =>
+                {
+                    self.handle_clipboard_key_action(
+                        tui,
+                        crate::chatwidget::KeyEventAction::PasteImage,
+                    );
+                }
                 TuiEvent::Paste(pasted) => {
                     // Pasted text may contain CRLF pairs or bare CRs (e.g., from iTerm2),
                     // but tui-textarea expects LF. Normalize CRLF pairs before bare CRs so
