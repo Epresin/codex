@@ -124,10 +124,20 @@ cloudflare_url() {
 }
 
 request_download() {
+  connect_timeout=5
+  download_timeout="${3:-0}"
+  read_timeout=10
+  case "$1" in
+    https://gh.mccts.cn/*) connect_timeout=1800; download_timeout=1800; read_timeout=1800 ;;
+  esac
   if command -v curl >/dev/null 2>&1; then
-    curl --connect-timeout 5 --max-time "${3:-0}" --speed-time 10 --speed-limit "${4:-0}" -fsSL "$1" -o "$2"
+    progress_flag=--progress-bar
+    [ "$2" != "-" ] || progress_flag=--silent
+    curl --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time 10 --speed-limit "${4:-0}" -fSL "$progress_flag" "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
-    wget --connect-timeout=5 --read-timeout=10 --tries=1 -q -O "$2" "$1"
+    progress_flag=--progress=bar:force
+    [ "$2" != "-" ] || progress_flag=--quiet
+    wget --connect-timeout="$connect_timeout" --read-timeout="$read_timeout" --tries=1 "$progress_flag" -O "$2" "$1"
   else
     echo "curl or wget is required to install Codex." >&2
     return 1

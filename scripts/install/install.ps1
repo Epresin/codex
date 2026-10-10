@@ -101,11 +101,15 @@ function Invoke-ReleaseRequest {
         $Uri.Replace("https://github.com/", "https://gh.mccts.cn/")
     }
     foreach ($url in @($Uri, $fallback)) {
-        $curlArgs = @("-fsL", "--connect-timeout", "5")
+        $isCloudflare = $url.StartsWith("https://gh.mccts.cn/")
+        $connectTimeout = if ($isCloudflare) { "1800" } else { "5" }
+        $curlArgs = @("-fL", "--connect-timeout", $connectTimeout)
         if ($OutFile) {
-            $curlArgs += @("-o", $OutFile)
-            if ($url -eq $Uri) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
-        } else { $curlArgs += @("--max-time", "8") }
+            $curlArgs += @("--progress-bar", "-o", $OutFile)
+            if (-not $isCloudflare) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
+        } else { $curlArgs += "--silent" }
+        if ($isCloudflare) { $curlArgs += @("--max-time", "1800") }
+        elseif (-not $OutFile) { $curlArgs += @("--max-time", "8") }
         $body = & curl.exe @curlArgs $url
         if ($LASTEXITCODE -eq 0) {
             if ($OutFile) { return }

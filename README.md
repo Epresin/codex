@@ -22,7 +22,7 @@ Cloudflare fallback if it fails or is slow:
 
 ```sh
 if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.sh) ||
-   s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
+   s=$(curl -fsSL --connect-timeout 1800 --max-time 1800 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
   printf '%s\n' "$s" | CODEX_NON_INTERACTIVE=1 sh
 fi
 ```

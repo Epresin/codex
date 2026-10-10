@@ -101,17 +101,22 @@ with the fork's standalone installer (no GitHub token is required):
 
 ```sh
 if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.sh) ||
-   s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
+   s=$(curl -fsSL --connect-timeout 1800 --max-time 1800 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh); then
   printf '%s\n' "$s" | CODEX_NON_INTERACTIVE=1 sh
 fi
 ```
 
 EP.3 prefers GitHub for update checks, installer bootstrap, and package files.
-Metadata and bootstrap requests have an eight-second total deadline (the doctor
-and daemon use the same deadline). Curl connections time out after five seconds;
-package downloads fall back after ten seconds below 256 KiB/s. The fallback is
-`gh.mccts.cn`; its package transfer does not have the GitHub low-speed cutoff.
-The wget compatibility path detects stalled reads instead of measuring speed.
+The EP.3 binary's metadata and bootstrap requests have an eight-second total
+deadline (the doctor and daemon use the same deadline). The online installer
+keeps GitHub's five-second connection/eight-second metadata timeouts and falls
+back after ten seconds below 256 KiB/s for packages. Its Cloudflare requests now
+allow 1,800 seconds for both connection and total transfer, without GitHub's
+low-speed cutoff. File transfers show progress; metadata stays silent.
+The wget compatibility path uses connection/stalled-read timeouts (also 1,800
+seconds for Cloudflare) instead of curl's total-time/minimum-speed controls.
+This script-only update does not change the EP.3 binary's compiled bootstrap
+timeout; use the command above when a longer initial Cloudflare wait is needed.
 The Windows standalone installer/bootstrap use the built-in `curl.exe`.
 
 `CODEX_RELEASES_API_URL` still overrides the metadata source. Even when metadata
