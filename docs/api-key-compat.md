@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.3`.
+The current EP release version is `0.162.1-ep.4`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -27,7 +27,7 @@ The upstream Apache-2.0 license and NOTICE are preserved.
    Package-manager update actions and OpenAI CDN/npm-archive fallback paths
    are removed; model inference configuration is unrelated to updates.
 6. New builds from the EP branch enable MultiAgentV2 by default. Users can
-   explicitly select V1 through configuration; see the unreleased change below.
+   explicitly select V1 through configuration; see the EP.4 change below.
 
 Search, image handling, compaction, and HTTP streaming reuse the upstream
 implementations. The WSL patch only changes local clipboard input.
@@ -58,10 +58,10 @@ API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
 
-## Subagent backend (unreleased)
+## Subagent backend (0.162.1-ep.4)
 
-New builds from this branch default to MultiAgentV2. This source change does
-not modify the already-published `0.162.1-ep.3` binaries or an installed Desktop.
+EP.4 defaults to MultiAgentV2. Earlier release binaries and an installed Desktop
+are unchanged until their Codex backend is updated to this build.
 
 V2's `spawn_agent` guidance asks the parent to consult the available model
 descriptions and explicitly select a model for the delegated task, respecting
@@ -198,8 +198,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.3`.
-This release uses `rust-v0.162.1-ep.3`; earlier
+`codex --version` and the TUI header report `0.162.1-ep.4`.
+This release uses `rust-v0.162.1-ep.4`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background

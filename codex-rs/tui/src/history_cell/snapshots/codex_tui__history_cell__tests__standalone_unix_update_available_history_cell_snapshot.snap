@@ -3,7 +3,7 @@ source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ✨ Update available! 0.162.1-ep.3 -> 9.9.9                                                                 │
+│ ✨ Update available! 0.162.1-ep.4 -> 9.9.9                                                                 │
 │ Run sh -c 's=$(curl -fsSL --connect-timeout 5 --max-time 8                                                 │
 │ https://raw.githubusercontent.com/Epresin/codex/ep/scripts/install/install.sh) || s=$(curl -fsSL           │
 │ --connect-timeout 5 --max-time 8 https://gh.mccts.cn/raw/Epresin/codex/ep/scripts/install/install.sh) ||   │
