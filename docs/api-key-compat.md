@@ -26,6 +26,8 @@ The upstream Apache-2.0 license and NOTICE are preserved.
    use this repository's Release API and the upstream standalone installer.
    Package-manager update actions and OpenAI CDN/npm-archive fallback paths
    are removed; model inference configuration is unrelated to updates.
+6. New builds from the EP branch enable MultiAgentV2 by default. Users can
+   explicitly select V1 through configuration; see the unreleased change below.
 
 Search, image handling, compaction, and HTTP streaming reuse the upstream
 implementations. The WSL patch only changes local clipboard input.
@@ -55,6 +57,42 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Subagent backend (unreleased)
+
+New builds from this branch default to MultiAgentV2. This source change does
+not modify the already-published `0.162.1-ep.3` binaries or an installed Desktop.
+
+V2's `spawn_agent` guidance asks the parent to consult the available model
+descriptions and explicitly select a model for the delegated task, respecting
+the user's model requirements instead of merely inheriting the parent model.
+Model roles and preferences remain description text supplied by the catalog;
+EP does not parse role markers or hardcode model IDs. Explicit model or reasoning
+selection is guided to use `fork_turns = "none"` with the needed task context.
+The V1 model-selection guidance is unchanged.
+
+To use the V1 subagent tools instead, add these settings to `config.toml`:
+
+```toml
+[features]
+multi_agent = true
+multi_agent_v2 = false
+```
+
+If `[features]` already exists, merge these keys into it rather than adding a
+second table. The structured form `[features.multi_agent_v2]` with
+`enabled = false` also works; do not combine it with the boolean form.
+With `multi_agent` enabled, disabling V2 explicitly selects V1 even when the
+model catalog or saved session metadata requests V2. Removing the V2 override,
+or setting it to `true`, restores the EP default. This selection also applies
+when resuming a session; it is not limited to newly created chats.
+
+To disable subagents entirely, use `[agents]` with `enabled = false`. That
+master switch takes precedence over the default or explicitly enabled V2.
+
+Restart the CLI or the Desktop app-server that runs this EP build after changing
+these settings. No Desktop frontend patch is needed to change this backend
+selection, but Desktop must actually be using the EP binary.
 
 ## Build note
 

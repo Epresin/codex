@@ -38,7 +38,7 @@ fn spawn_agent_tool_v2_requires_task_name() {
     assert!(description.contains("Spawns an agent to work on the specified task."));
     assert!(description.contains("The spawned agent will have the same tools as you"));
     assert!(!description.contains("max_concurrent_threads_per_session"));
-    assert!(description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
+    assert!(description.contains(SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2));
     assert!(properties.contains_key("task_name"));
     assert!(properties.contains_key("message"));
     assert_eq!(
@@ -54,7 +54,7 @@ fn spawn_agent_tool_v2_requires_task_name() {
         properties
             .get("model")
             .and_then(|schema| schema.description.as_deref()),
-        Some(SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION)
+        Some("Explicit model ID for the delegated task.")
     );
     assert_eq!(
         properties
@@ -99,7 +99,7 @@ fn spawn_agent_catalog_description_preserves_generated_context() {
     assert!(
         configured_tool
             .description
-            .contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE)
+            .contains(SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2)
     );
     assert!(configured_tool.description.ends_with("Local usage hint."));
     assert!(
@@ -199,10 +199,7 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden(
     assert!(properties.contains_key("reasoning_effort"));
     assert!(!properties.contains_key("service_tier"));
     assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
-    assert_eq!(
-        description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE_V2),
-        model_catalog_in_context
-    );
+    assert!(description.contains(SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2));
 }
 
 #[test]
@@ -235,7 +232,7 @@ fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
     for property in ["agent_type", "model", "reasoning_effort", "service_tier"] {
         assert!(!properties.contains_key(property));
     }
-    assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
+    assert!(!description.contains(SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2));
     assert!(!description.contains("Available model overrides"));
 }
 

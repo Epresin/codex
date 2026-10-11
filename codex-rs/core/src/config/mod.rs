@@ -1602,10 +1602,14 @@ impl Config {
     }
 
     pub(crate) fn multi_agent_version_override(&self) -> Option<MultiAgentVersion> {
-        if self.features.enabled(Feature::MultiAgentV2) {
-            Some(MultiAgentVersion::V2)
-        } else if !self.agents_enabled {
+        if !self.agents_enabled {
             Some(MultiAgentVersion::Disabled)
+        } else if self.features.enabled(Feature::MultiAgentV2) {
+            Some(MultiAgentVersion::V2)
+        } else if self.features.enabled(Feature::Collab) {
+            // EP defaults to V2; opting out selects V1 even when model or session
+            // metadata would otherwise select V2.
+            Some(MultiAgentVersion::V1)
         } else {
             None
         }

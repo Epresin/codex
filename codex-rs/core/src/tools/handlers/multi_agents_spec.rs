@@ -15,7 +15,7 @@ pub const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
 const MULTI_AGENT_V1_NAMESPACE_DESCRIPTION: &str = "Tools for spawning and managing sub-agents.";
 
 const SPAWN_AGENT_INHERITED_MODEL_GUIDANCE: &str = "Spawned agents inherit your current model by default. Omit `model` to use that preferred default; set `model` only when an explicit override is needed.";
-const SPAWN_AGENT_INHERITED_MODEL_GUIDANCE_V2: &str = "Spawned agents inherit your current model by default. Do not set the `model` field unless the user explicitly asks for a different model.";
+const SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2: &str = "Before spawning a subagent, review the available models and their descriptions, choose a model that fits the delegated task and the user's model requirements, and explicitly set `model`; do not omit `model` merely to inherit the parent model.";
 const SPAWN_AGENT_MODEL_CATALOG_GUIDANCE: &str =
     "Pick model overrides from the latest <model_catalog> listing.";
 const SPAWN_AGENT_TYPE_OVERRIDE_DESCRIPTION_V1: &str = "Agent type override for the new agent. Omit to inherit the parent agent type with a full-history fork; otherwise, `default` is used.";
@@ -114,14 +114,9 @@ pub fn create_spawn_agent_tool_v2(
         .then(|| {
             spawn_agent_models_description(&options.available_models, options.multi_agent_version)
         });
-    let inherited_model_guidance = if options.model_catalog_in_context {
-        options
-            .expose_spawn_agent_model_overrides
-            .then_some(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE_V2)
-    } else {
-        (options.expose_spawn_agent_model_overrides && !options.hide_agent_type_model_reasoning)
-            .then_some(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE)
-    };
+    let model_selection_guidance = options
+        .expose_spawn_agent_model_overrides
+        .then_some(SPAWN_AGENT_MODEL_SELECTION_GUIDANCE_V2);
     let mut properties = spawn_agent_common_properties_v2(&options.agent_type_description);
     if !options.expose_agent_type {
         properties.remove("agent_type");
@@ -146,7 +141,7 @@ pub fn create_spawn_agent_tool_v2(
             options
                 .expose_spawn_agent_model_overrides
                 .then_some(SPAWN_AGENT_MODEL_CATALOG_GUIDANCE),
-            inherited_model_guidance,
+            model_selection_guidance,
             options.usage_hint_text,
             description_override,
         ),
@@ -670,7 +665,7 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
         (
             "model".to_string(),
             JsonSchema::string(Some(
-                SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION.to_string(),
+                "Explicit model ID for the delegated task.".to_string(),
             )),
         ),
         (
@@ -773,12 +768,12 @@ fn spawn_agent_tool_description_v2(
     available_models_description: Option<&str>,
     model_catalog_in_context: bool,
     model_catalog_guidance: Option<&str>,
-    inherited_model_guidance: Option<&str>,
+    model_selection_guidance: Option<&str>,
     usage_hint_text: Option<String>,
     description: Option<&str>,
 ) -> String {
     let model_catalog_guidance = model_catalog_guidance.unwrap_or_default();
-    let inherited_model_guidance = inherited_model_guidance.unwrap_or_default();
+    let model_selection_guidance = model_selection_guidance.unwrap_or_default();
 
     let (catalog_prefix, catalog_suffix) = if model_catalog_in_context {
         (String::new(), format!("\n{model_catalog_guidance}"))
@@ -793,7 +788,7 @@ fn spawn_agent_tool_description_v2(
         format!(
             r#"
 {catalog_prefix}        {description}
-{inherited_model_guidance}{catalog_suffix}"#
+{model_selection_guidance}{catalog_suffix}"#
         )
     } else {
         format!(
@@ -801,7 +796,7 @@ fn spawn_agent_tool_description_v2(
 {catalog_prefix}        Spawns an agent to work on the specified task. If your current task is `/root/task1` and you spawn_agent with task_name "task_3" the agent will have canonical task name `/root/task1/task_3`.
 You are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.
 The spawned agent will have the same tools as you and the ability to spawn its own subagents.
-{inherited_model_guidance}{catalog_suffix}
+{model_selection_guidance}{catalog_suffix}
 It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
 The new agent's canonical task name will be provided to it along with the message.
 
@@ -881,9 +876,12 @@ fn spawn_agent_models_description(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    format!(
-        "Available model overrides (optional; inherited parent model is preferred):\n{model_descriptions}"
-    )
+    let heading = if multi_agent_version == MultiAgentVersion::V2 {
+        "Available models for subagents (select explicitly using their descriptions)"
+    } else {
+        "Available model overrides (optional; inherited parent model is preferred)"
+    };
+    format!("{heading}:\n{model_descriptions}")
 }
 
 fn wait_agent_tool_parameters_v1(options: WaitAgentTimeoutOptions) -> JsonSchema {
