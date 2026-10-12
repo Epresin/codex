@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.4`.
+The current EP release version is `0.162.1-ep.5`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,19 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Ultra defaults (0.162.1-ep.5)
+
+Confirming Ultra in `/model` now saves `model_reasoning_effort = "ultra"`
+as the default for new conversations. EP no longer replaces the saved effort
+with the previous non-Ultra setting while applying Ultra only to the active
+conversation. The picker labels ordinary confirmation as `default`.
+
+The explicit `s` / session-only action still changes only the active conversation
+and preserves saved defaults. Existing higher-priority configuration and separate
+saved Plan-mode defaults retain their precedence. Ultra's active-conversation
+behavior, concurrency warning, and V2 proactive-delegation instructions are
+otherwise unchanged.
 
 ## Subagent backend (0.162.1-ep.4)
 
@@ -198,8 +211,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.4`.
-This release uses `rust-v0.162.1-ep.4`; earlier
+`codex --version` and the TUI header report `0.162.1-ep.5`.
+This release uses `rust-v0.162.1-ep.5`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background
