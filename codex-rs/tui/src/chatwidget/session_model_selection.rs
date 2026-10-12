@@ -55,12 +55,7 @@ impl ChatWidget {
         let keymap = self.bottom_pane.list_keymap();
         let mut hints = Vec::new();
         if let Some(accept) = keymap.primary_hint(ListAction::Accept) {
-            let label = if effort == Some(ReasoningEffortConfig::Ultra) {
-                " apply · "
-            } else {
-                " default · "
-            };
-            hints.extend([accept.into(), label.dim()]);
+            hints.extend([accept.into(), " default · ".dim()]);
         }
         hints.extend([key.into(), " session".dim()]);
         if let Some(cancel) = keymap.primary_hint(ListAction::Cancel) {
