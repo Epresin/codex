@@ -44,6 +44,7 @@ impl StatusLineAccent {
             StatusLineItem::Status => Self::State,
             StatusLineItem::ContextRemaining
             | StatusLineItem::ContextUsed
+            | StatusLineItem::ContextWindow
             | StatusLineItem::ContextWindowSize
             | StatusLineItem::UsedTokens
             | StatusLineItem::TotalInputTokens

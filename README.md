@@ -17,7 +17,7 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 This is the public `Epresin/codex` fork of `openai/codex`. Our maintained branch
 is `ep`; `main` retains the upstream line. Install the EP Linux x86_64 package
-(including WSL) from this repository's Releases. GitHub is tried first, with
+(including WSL) or Windows x86_64 package from this repository's Releases. GitHub is tried first, with
 Cloudflare fallback if it fails or is slow:
 
 ```sh
@@ -27,9 +27,9 @@ if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent
 fi
 ```
 
-Then run `codex --version` and `codex`. The current release is `0.162.1-ep.5`.
+Then run `codex --version` and `codex`. The current release is `0.162.1-ep.6`.
 Use `codex update` for later releases. Existing configuration and authentication
-are preserved. Other platform binaries are not published by this release;
+are preserved. Linux x86_64 musl and Windows x86_64 MSVC packages are provided;
 installing official npm/Homebrew packages would install upstream Codex, not EP.
 
 For API-key/custom-base-URL setup, package contents, and maintenance, see

@@ -5883,3 +5883,80 @@ async fn chatwidget_tall() {
         normalize_snapshot_paths(term.backend().vt100().screen().contents())
     );
 }
+
+#[tokio::test]
+async fn status_line_context_window_is_enabled_by_default_but_respects_custom_items() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.local_settings.tui.status_line = None;
+    assert_eq!(chat.configured_status_line_items()[1], "context-window");
+    chat.local_settings.tui.status_line = Some(vec!["model-with-reasoning".to_string()]);
+    assert_eq!(
+        chat.configured_status_line_items(),
+        vec!["model-with-reasoning"]
+    );
+    chat.local_settings.tui.status_line = Some(vec![]);
+    assert!(chat.configured_status_line_items().is_empty());
+}
+
+#[tokio::test]
+async fn status_line_context_window_matches_status_and_tracks_compaction() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["context-window".to_string()]);
+    chat.config.model_context_window = Some(1_000_000);
+    // Cumulative consumption must not be mistaken for current context occupancy.
+    for used in [64_000, 12_000] {
+        handle_token_count(
+            &mut chat,
+            Some(TokenUsageInfo {
+                total_token_usage: TokenUsage {
+                    total_tokens: 900_000,
+                    ..TokenUsage::default()
+                },
+                last_token_usage: TokenUsage {
+                    total_tokens: used,
+                    ..TokenUsage::default()
+                },
+                model_context_window: Some(200_000),
+            }),
+        );
+        chat.refresh_status_line();
+        let footer = status_line_text(&chat).expect("context status line");
+        let expected_usage = TokenUsage {
+            total_tokens: used,
+            ..TokenUsage::default()
+        };
+        let remaining = expected_usage.percent_of_context_window_remaining(200_000);
+        assert_eq!(
+            footer,
+            format!(
+                "Context {remaining}% left ({} used / 200K)",
+                format_tokens_compact(used)
+            )
+        );
+        chat.add_status_output(false, None);
+        let cells = drain_insert_history(&mut rx);
+        let rendered = lines_to_single_string(cells.last().expect("status card"));
+        assert!(rendered.contains(footer.strip_prefix("Context ").unwrap()));
+    }
+}
+
+#[tokio::test]
+async fn status_line_context_window_hides_pending_and_unknown_values() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("unknown-model")).await;
+    chat.local_settings.tui.status_line = Some(vec!["context-window".to_string()]);
+    chat.config.model_context_window = None;
+    chat.token_info = None;
+    chat.token_usage_pending = false;
+    assert_eq!(chat.status_line_context_window(), None);
+    chat.config.model_context_window = Some(200_000);
+    assert_eq!(
+        chat.status_line_context_window(),
+        Some("Context 100% left (0 used / 200K)".to_string())
+    );
+    chat.token_usage_pending = true;
+    assert_eq!(chat.status_line_context_window(), None);
+    chat.token_usage_pending = false;
+    chat.config.model_context_window = Some(0);
+    assert_eq!(chat.status_line_context_window(), None);
+}

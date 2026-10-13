@@ -116,6 +116,9 @@ pub(crate) enum StatusLineItem {
     /// Codex application version.
     CodexVersion,
 
+    /// Current context usage and capacity, matching the `/status` context summary.
+    ContextWindow,
+
     /// Total context window size in tokens.
     ContextWindowSize,
 
@@ -193,6 +196,9 @@ impl StatusLineItem {
                 "Remaining usage on the secondary usage limit (omitted when unavailable)"
             }
             StatusLineItem::CodexVersion => "Codex application version",
+            StatusLineItem::ContextWindow => {
+                "Remaining context and current tokens / capacity, as in /status (omitted when unknown)"
+            }
             StatusLineItem::ContextWindowSize => {
                 "Total context window size in tokens (omitted when unknown)"
             }
@@ -241,6 +247,7 @@ impl StatusLineItem {
             StatusLineItem::FiveHourLimit => StatusSurfacePreviewItem::FiveHourLimit,
             StatusLineItem::WeeklyLimit => StatusSurfacePreviewItem::WeeklyLimit,
             StatusLineItem::CodexVersion => StatusSurfacePreviewItem::CodexVersion,
+            StatusLineItem::ContextWindow => StatusSurfacePreviewItem::ContextWindow,
             StatusLineItem::ContextWindowSize => StatusSurfacePreviewItem::ContextWindowSize,
             StatusLineItem::UsedTokens => StatusSurfacePreviewItem::UsedTokens,
             StatusLineItem::TotalInputTokens => StatusSurfacePreviewItem::TotalInputTokens,

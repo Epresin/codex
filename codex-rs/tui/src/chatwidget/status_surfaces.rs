@@ -774,6 +774,7 @@ impl ChatWidget {
                 self.status_line_limit_display(Some(window), &label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
+            StatusLineItem::ContextWindow => self.status_line_context_window(),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
                 .map(|cws| format!("{} window", format_tokens_compact(cws))),
@@ -867,6 +868,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::FiveHourLimit => StatusLineItem::FiveHourLimit,
             StatusSurfacePreviewItem::WeeklyLimit => StatusLineItem::WeeklyLimit,
             StatusSurfacePreviewItem::CodexVersion => StatusLineItem::CodexVersion,
+            StatusSurfacePreviewItem::ContextWindow => StatusLineItem::ContextWindow,
             StatusSurfacePreviewItem::ContextWindowSize => StatusLineItem::ContextWindowSize,
             StatusSurfacePreviewItem::UsedTokens => StatusLineItem::UsedTokens,
             StatusSurfacePreviewItem::TotalInputTokens => StatusLineItem::TotalInputTokens,

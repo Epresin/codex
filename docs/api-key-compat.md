@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.5`.
+The current EP release version is `0.162.1-ep.6`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,27 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Context status line and Windows packages (0.162.1-ep.6)
+
+The default TUI footer now includes `context-window`, showing the same remaining
+percentage and current context tokens / capacity as `/status`. It uses the last
+request's usage, not cumulative session consumption, so compaction reduces the
+displayed occupancy. Unknown or still-loading context usage is omitted.
+
+Use `/statusline` to toggle or reorder this item. Existing explicit
+`tui.status_line` configurations are preserved; add `context-window` there to
+opt in. The separate `used-tokens` item still reports cumulative session usage.
+
+This release adds a Windows x86_64 MSVC standalone package alongside the Linux
+x86_64 musl package. Both contain freshly built EP.6 binaries and required
+platform helpers. Windows binaries are not Authenticode-signed; optional voice
+runtime resources are not included on either platform.
+
+It also includes installer release-version validation, authenticated checksum
+manifest verification when a digest is supplied, and recovery from interrupted,
+corrupt, or non-resumable downloads. Existing configuration and authentication
+are preserved.
 
 ## Ultra defaults (0.162.1-ep.5)
 
@@ -197,8 +218,8 @@ Codex configuration, API-key authentication, and old version directories.
 Run `codex update` for subsequent upgrades; startup update prompts use the
 same installer. Set `check_for_update_on_startup = false` to disable prompts.
 Only targets with uploaded release assets can be installed. This release
-provides Linux x86_64 musl; the Windows installer shares the same protocol,
-but no Windows build is published by this release.
+provides Linux x86_64 musl and Windows x86_64 MSVC. The Windows installer
+uses the same release and checksum protocol.
 
 ## GitHub migration (2026-10-10)
 
@@ -218,8 +239,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.5`.
-This release uses `rust-v0.162.1-ep.5`; earlier
+`codex --version` and the TUI header report `0.162.1-ep.6`.
+This release uses `rust-v0.162.1-ep.6`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background

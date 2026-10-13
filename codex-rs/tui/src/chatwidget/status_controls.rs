@@ -402,6 +402,29 @@ impl ChatWidget {
         preview_data
     }
 
+    /// Use the last request's context occupancy, not cumulative session token consumption.
+    /// Match `/status` formatting and hide stale/unknown usage while a thread is loading.
+    pub(super) fn status_line_context_window(&self) -> Option<String> {
+        if self.token_usage_pending {
+            return None;
+        }
+        let window = self
+            .status_line_context_window_size()
+            .filter(|window| *window > 0)?;
+        let default_usage = TokenUsage::default();
+        let usage = self
+            .token_info
+            .as_ref()
+            .map(|info| &info.last_token_usage)
+            .unwrap_or(&default_usage);
+        let remaining = usage.percent_of_context_window_remaining(window);
+        let used = format_tokens_compact(usage.tokens_in_context_window());
+        let capacity = format_tokens_compact(window);
+        Some(format!(
+            "Context {remaining}% left ({used} used / {capacity})"
+        ))
+    }
+
     pub(super) fn status_line_context_window_size(&self) -> Option<i64> {
         self.token_info
             .as_ref()
