@@ -123,7 +123,7 @@ cloudflare_url() {
   esac
 }
 
-request_download() {
+request_download() (
   connect_timeout=5
   download_timeout="${3:-0}"
   read_timeout=10
@@ -139,9 +139,29 @@ request_download() {
       ;;
   esac
   if command -v curl >/dev/null 2>&1; then
-    progress_flag=--progress-bar
-    [ "$2" != "-" ] || progress_flag=--silent
-    curl --continue-at "$resume_from" --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time "$speed_time" --speed-limit "$speed_limit" -fSL "$progress_flag" "$1" -o "$2"
+    if [ "$2" = "-" ]; then
+      curl --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time "$speed_time" --speed-limit "$speed_limit" -fsSL "$1"
+      return
+    fi
+    while :; do
+      if http_status="$(curl --continue-at "$resume_from" --connect-timeout "$connect_timeout" --max-time "$download_timeout" --speed-time "$speed_time" --speed-limit "$speed_limit" -fSL --progress-bar --write-out '%{http_code}' "$1" -o "$2")"; then
+        # curl can report success for a 416 response when resuming.
+        [ "$http_status" = "416" ] || return 0
+        curl_status=22
+      else
+        curl_status=$?
+      fi
+      # Restart an unsupported/rejected resume once, not ordinary interruptions.
+      if [ "$resume_from" = "-" ] &&
+        { [ "$curl_status" -eq 33 ] || [ "$curl_status" -eq 36 ] ||
+          { [ "$curl_status" -eq 22 ] && [ "$http_status" = "416" ]; }; }; then
+        warn "Server cannot resume this download; restarting from the beginning."
+        rm -f "$2" || return 1
+        resume_from=0
+      else
+        return "$curl_status"
+      fi
+    done
   elif command -v wget >/dev/null 2>&1; then
     progress_flag=--progress=bar:force
     [ "$2" != "-" ] || progress_flag=--quiet
@@ -154,15 +174,35 @@ request_download() {
     echo "curl or wget is required to install Codex." >&2
     return 1
   fi
-}
+)
 
-download_file() {
+verify_download() (
+  if [ -n "$2" ]; then
+    verify_archive_digest "$1" "$2" || return 1
+  fi
+  if [ -n "$3" ]; then
+    package_archive_digest "$3" "$1" >/dev/null || return 1
+  fi
+)
+
+download_file() (
   primary="$(github_url "$1")"
-  if request_download "$primary" "$2" 0 262144; then return; fi
-  fallback="$(cloudflare_url "$primary")" || return 1
-  warn "GitHub download failed or stayed below 256 KiB/s for 10 seconds; retrying Cloudflare."
-  request_download "$fallback" "$2"
-}
+  fallback="$(cloudflare_url "$primary" || true)"
+  for source_url in "$primary" "$fallback"; do
+    [ -n "$source_url" ] || continue
+    if request_download "$source_url" "$2" 0 262144; then
+      if verify_download "$2" "${3:-}" "${4:-}"; then
+        return 0
+      fi
+      # Never append the backup source to bytes that failed validation.
+      rm -f "$2" || return 1
+    fi
+    if [ "$source_url" = "$primary" ] && [ -n "$fallback" ]; then
+      warn "GitHub download failed, was too slow, or failed verification; retrying Cloudflare."
+    fi
+  done
+  return 1
+)
 
 download_text() {
   if text="$(request_download "$1" - 8)"; then
@@ -187,6 +227,8 @@ parse_release_metadata() {
           asset_name = value
         } else if (key == "browser_download_url") {
           asset_url = value
+        } else if (key == "digest") {
+          asset_digest = value
         }
       }
 
@@ -234,17 +276,19 @@ parse_release_metadata() {
             asset_object_depth = object_depth
             asset_name = ""
             asset_url = ""
+            asset_digest = ""
           }
           expecting_value = 0
           key = ""
         } else if (char == "}") {
           if (object_depth == asset_object_depth) {
             if (asset_name != "" && asset_url != "") {
-              print "asset\t" asset_name "\t" asset_url
+              print "asset\t" asset_name "\t" asset_url "\t" asset_digest
             }
             asset_object_depth = 0
             asset_name = ""
             asset_url = ""
+            asset_digest = ""
           }
           object_depth--
           expecting_value = 0
@@ -283,17 +327,25 @@ parse_release_metadata() {
 
 resolve_release() {
   normalized_version="$(normalize_version "$RELEASE")"
-  validate_version "$normalized_version"
+  validate_version "$normalized_version" || return 1
   if [ "$normalized_version" = "latest" ]; then
     metadata_url="${RELEASES_API_URL%/}/latest"
   else
     metadata_url="${RELEASES_API_URL%/}/tags/rust-v$normalized_version"
   fi
-  release_json="$(download_text "$metadata_url")"
-  release_metadata="$(printf '%s\n' "$release_json" | parse_release_metadata)"
+  release_json="$(download_text "$metadata_url")" || return 1
+  release_metadata="$(printf '%s\n' "$release_json" | parse_release_metadata)" || return 1
   release_tag="$(printf '%s\n' "$release_metadata" | awk -F '\t' '$1 == "tag_name" { print $2; exit }')"
   resolved_version="$(normalize_version "$release_tag")"
-  validate_version "$resolved_version"
+  if [ "$resolved_version" = "latest" ]; then
+    echo "Release metadata did not contain a concrete Codex version." >&2
+    return 1
+  fi
+  validate_version "$resolved_version" || return 1
+  if [ "$normalized_version" != "latest" ] && [ "$resolved_version" != "$normalized_version" ]; then
+    echo "Release metadata version $resolved_version did not match requested Codex version $normalized_version." >&2
+    return 1
+  fi
   select_release_assets
 }
 
@@ -304,6 +356,19 @@ release_asset_url() {
   '
 }
 
+release_asset_digest() (
+  digest="$(printf '%s\n' "$release_metadata" | awk -F '\t' -v asset="$1" '
+    $1 == "asset" && $2 == asset { print $4; exit }
+  ')"
+  # Older compatible release APIs omit digest or return null.
+  [ -n "$digest" ] || return 0
+  if ! printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-fA-F]{64}$'; then
+    echo "Invalid SHA-256 digest in release metadata for $1." >&2
+    return 1
+  fi
+  printf '%s\n' "${digest#sha256:}" | tr 'A-F' 'a-f'
+)
+
 select_release_assets() {
   asset="codex-package-$vendor_target.tar.gz"
   checksum_asset="codex-package_SHA256SUMS"
@@ -313,6 +378,7 @@ select_release_assets() {
     echo "Could not find the standard Codex package for $vendor_target in release $resolved_version." >&2
     return 1
   fi
+  checksum_digest="$(release_asset_digest "$checksum_asset")" || return 1
 }
 
 package_archive_digest() {
@@ -1020,18 +1086,16 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
 
   checksum_path="$tmp_dir/$checksum_asset"
   step "Downloading $checksum_asset"
-  download_file "$checksum_url" "$checksum_path"
+  download_file "$checksum_url" "$checksum_path" "$checksum_digest" "$asset"
   expected_digest="$(package_archive_digest "$asset" "$checksum_path")"
   mkdir -p "$STANDALONE_ROOT/downloads"
   archive_path="$STANDALONE_ROOT/downloads/$expected_digest.part"
   if [ ! -f "$archive_path" ] || ! verify_archive_digest "$archive_path" "$expected_digest" >/dev/null 2>&1; then
     step "Downloading $asset (resume supported)"
-    if ! download_file "$download_url" "$archive_path"; then
-      warn "Partial download kept at $archive_path; rerun the installer to resume."
-      exit 1
-    fi
-    if ! verify_archive_digest "$archive_path" "$expected_digest"; then
-      rm -f "$archive_path"
+    if ! download_file "$download_url" "$archive_path" "$expected_digest"; then
+      if [ -f "$archive_path" ]; then
+        warn "Partial download kept at $archive_path; rerun the installer to resume."
+      fi
       exit 1
     fi
   fi

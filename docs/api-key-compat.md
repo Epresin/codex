@@ -178,7 +178,14 @@ The Windows standalone installer/bootstrap use the built-in `curl.exe`.
 
 `CODEX_RELEASES_API_URL` still overrides the metadata source. Even when metadata
 came from Cloudflare, package links are normalized to GitHub and attempted there
-first. Checksums are verified after either path. Failed/partial bootstrap output
+first. When release metadata supplies a SHA-256 digest, the installers verify the
+checksum manifest against it before trusting its package hashes. Missing or null
+digests remain supported for compatible release APIs; malformed supplied digests
+are rejected. Download or verification failures try the fallback, discarding
+corrupt bytes but retaining interrupted transfers for resume. If a server cannot
+resume a partial file (including HTTP 416), the installer retries that source
+once from the beginning. Explicit release requests must match the version in
+the returned metadata. Checksums are verified after either path. Failed/partial bootstrap output
 is discarded before the fallback script is executed. No new user config is
 required. The proxy uses a Worker and edge cache, not R2; see
 `scripts/github-proxy/README.md`.

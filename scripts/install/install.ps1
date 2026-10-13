@@ -85,11 +85,18 @@ function Find-ReleaseAssetMetadata {
     param([string]$AssetName, [object]$ReleaseMetadata)
     $asset = $ReleaseMetadata.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
     if ($null -eq $asset) { return $null }
-    return [PSCustomObject]@{ Url = $asset.browser_download_url }
+    $digest = $null
+    $digestProperty = $asset.PSObject.Properties["digest"]
+    if ($null -ne $digestProperty -and -not [string]::IsNullOrEmpty([string]$digestProperty.Value)) {
+        $match = [regex]::Match([string]$digestProperty.Value, "^sha256:([0-9a-fA-F]{64})$")
+        if (-not $match.Success) { throw "Invalid SHA-256 digest in release metadata for $AssetName." }
+        $digest = $match.Groups[1].Value.ToLowerInvariant()
+    }
+    return [PSCustomObject]@{ Url = $asset.browser_download_url; Sha256 = $digest }
 }
 
 function Invoke-ReleaseRequest {
-    param([string]$Uri, [string]$OutFile)
+    param([string]$Uri, [string]$OutFile, [string]$ExpectedDigest, [string]$RequiredManifestAsset)
     if ($OutFile) {
         $Uri = $Uri.Replace("https://gh.mccts.cn/api/", "https://api.github.com/").Replace("https://gh.mccts.cn/raw/", "https://raw.githubusercontent.com/").Replace("https://gh.mccts.cn/", "https://github.com/")
     }
@@ -101,40 +108,75 @@ function Invoke-ReleaseRequest {
         $Uri.Replace("https://github.com/", "https://gh.mccts.cn/")
     }
     foreach ($url in @($Uri, $fallback)) {
-        $isCloudflare = $url.StartsWith("https://gh.mccts.cn/")
-        $connectTimeout = if ($isCloudflare) { "1800" } else { "5" }
-        $curlArgs = @("-fL", "--connect-timeout", $connectTimeout)
-        if ($OutFile) {
-            $curlArgs += @("--progress-bar", "-o", $OutFile)
-            if ($OutFile.EndsWith(".part")) { $curlArgs += @("--continue-at", "-") }
-            if (-not $isCloudflare) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
-        } else { $curlArgs += "--silent" }
-        if ($isCloudflare -and $OutFile) { $curlArgs += @("--max-time", "0", "--speed-time", "1800", "--speed-limit", "1") }
-        elseif ($isCloudflare) { $curlArgs += @("--max-time", "1800") }
-        elseif (-not $OutFile) { $curlArgs += @("--max-time", "8") }
-        $body = & curl.exe @curlArgs $url
-        if ($LASTEXITCODE -eq 0) {
-            if ($OutFile) { return }
-            return (($body -join "`n") | ConvertFrom-Json)
+        if (-not $url) { continue }
+        try {
+            $isCloudflare = $url.StartsWith("https://gh.mccts.cn/")
+            $connectTimeout = if ($isCloudflare) { "1800" } else { "5" }
+            $curlArgs = @("-fL", "--connect-timeout", $connectTimeout)
+            if ($OutFile) {
+                $curlArgs += @("--progress-bar", "-o", $OutFile)
+                if (-not $isCloudflare) { $curlArgs += @("--speed-time", "10", "--speed-limit", "262144") }
+            } else { $curlArgs += "--silent" }
+            if ($isCloudflare -and $OutFile) { $curlArgs += @("--max-time", "0", "--speed-time", "1800", "--speed-limit", "1") }
+            elseif ($isCloudflare) { $curlArgs += @("--max-time", "1800") }
+            elseif (-not $OutFile) { $curlArgs += @("--max-time", "8") }
+            if (-not $OutFile) {
+                $body = & curl.exe @curlArgs $url
+                if ($LASTEXITCODE -ne 0) { throw "Download failed: $url (curl exit $LASTEXITCODE)." }
+                return (($body -join [Environment]::NewLine) | ConvertFrom-Json)
+            }
+            $canResume = $OutFile.EndsWith(".part")
+            while ($true) {
+                $resumeArgs = @()
+                if ($canResume) { $resumeArgs = @("--continue-at", "-") }
+                $httpStatus = (& curl.exe @curlArgs @resumeArgs --write-out "%{http_code}" $url) -join ""
+                $curlStatus = $LASTEXITCODE
+                # A resumed 416 response can have curl exit status zero.
+                if ($curlStatus -eq 0 -and $httpStatus -ne "416") { break }
+                if ($canResume -and ($curlStatus -in @(33, 36) -or $httpStatus -eq "416")) {
+                    Write-WarningStep "Server cannot resume this download; restarting from the beginning."
+                    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force }
+                    $canResume = $false
+                } else {
+                    throw "Download failed: $url (curl exit $curlStatus)."
+                }
+            }
+            try {
+                if ($ExpectedDigest) { Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest }
+                if ($RequiredManifestAsset) { $null = Get-PackageArchiveDigest -ManifestPath $OutFile -AssetName $RequiredManifestAsset }
+            } catch {
+                # Corrupt bytes must not become the prefix of a resumed fallback.
+                Remove-Item -LiteralPath $OutFile -Force
+                throw
+            }
+            return
+        } catch {
+            if (-not $fallback -or $url -eq $fallback) { throw }
+            Write-WarningStep "GitHub download failed, was too slow, or failed verification; retrying Cloudflare."
         }
-        if (-not $fallback -or $url -eq $fallback) { throw "Download failed: $url (curl exit $LASTEXITCODE)." }
-        Write-WarningStep "GitHub download failed or was too slow; retrying Cloudflare."
     }
 }
 
 function Invoke-ReleaseDownload {
-    param([object]$Metadata, [string]$OutFile, [string]$ExpectedDigest)
+    param([object]$Metadata, [string]$OutFile, [string]$ExpectedDigest, [string]$RequiredManifestAsset)
+    if (-not $ExpectedDigest) {
+        $digestProperty = $Metadata.PSObject.Properties["Sha256"]
+        if ($null -ne $digestProperty) { $ExpectedDigest = $digestProperty.Value }
+    }
     if ($ExpectedDigest -and (Test-Path -LiteralPath $OutFile)) {
-        try { Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest; return } catch {}
+        try {
+            Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest
+            if ($RequiredManifestAsset) { $null = Get-PackageArchiveDigest -ManifestPath $OutFile -AssetName $RequiredManifestAsset }
+            return
+        } catch {}
     }
-    try { Invoke-ReleaseRequest -Uri $Metadata.Url -OutFile $OutFile }
-    catch {
-        if ($OutFile.EndsWith(".part")) { Write-WarningStep "Partial download kept at $OutFile; rerun the installer to resume." }
+    try {
+        Invoke-ReleaseRequest -Uri $Metadata.Url -OutFile $OutFile -ExpectedDigest $ExpectedDigest -RequiredManifestAsset $RequiredManifestAsset
+    } catch {
+        if ($OutFile.EndsWith(".part") -and (Test-Path -LiteralPath $OutFile)) {
+            Write-WarningStep "Partial download kept at $OutFile; rerun the installer to resume."
+        }
         throw
-    }
-    if ($ExpectedDigest) {
-        try { Test-ArchiveDigest -ArchivePath $OutFile -ExpectedDigest $ExpectedDigest }
-        catch { Remove-Item -LiteralPath $OutFile -Force; throw }
     }
 }
 
@@ -282,6 +324,7 @@ function Resolve-VersionFromReleaseMetadata {
 
     $resolvedVersion = Normalize-Version -RawVersion $ReleaseMetadata.tag_name
     Assert-ValidReleaseVersion -Version $resolvedVersion
+    if ($resolvedVersion -eq "latest") { throw "Release metadata did not contain a concrete Codex version." }
     return $resolvedVersion
 }
 
@@ -294,8 +337,12 @@ function Resolve-Release {
         "$ReleasesApiUri/tags/rust-v$normalizedVersion"
     }
     $releaseMetadata = Invoke-ReleaseRequest -Uri $metadataUri
+    $resolvedVersion = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
+    if ($normalizedVersion -ne "latest" -and $resolvedVersion -cne $normalizedVersion) {
+        throw "Release metadata version $resolvedVersion did not match requested Codex version $normalizedVersion."
+    }
     return [PSCustomObject]@{
-        Version = Resolve-VersionFromReleaseMetadata -ReleaseMetadata $releaseMetadata
+        Version = $resolvedVersion
         Metadata = $releaseMetadata
     }
 }
@@ -941,7 +988,7 @@ try {
             $stagingDir = Join-Path $releasesDir ".staging.$releaseName.$PID"
 
             Write-Step "Downloading $checksumAsset"
-            Invoke-ReleaseDownload -Metadata $checksumMetadata -OutFile $checksumPath
+            Invoke-ReleaseDownload -Metadata $checksumMetadata -OutFile $checksumPath -RequiredManifestAsset $packageAsset
             $expectedPackageDigest = Get-PackageArchiveDigest -ManifestPath $checksumPath -AssetName $packageAsset
             $downloadCache = Join-Path $standaloneRoot "downloads"
             New-Item -ItemType Directory -Force -Path $downloadCache | Out-Null

@@ -18,7 +18,9 @@ ASSET = f"codex-package-{TARGET}.tar.gz"
 
 @unittest.skipUnless(os.name == "posix", "the shell installer runs on Unix")
 class InstallShTest(unittest.TestCase):
-    def install_fixture(self, *, api_digests, exact_version, interrupt_download=False):
+    def install_fixture(self, *, api_digests, exact_version, interrupt_download=False,
+                        requested_version=VERSION, manifest_digest=None, resume_mode="supported",
+                        expected_error=None):
         with tempfile.TemporaryDirectory(prefix="codex-ep-install-") as temporary:
             root = Path(temporary)
             package = root / "package"
@@ -57,6 +59,8 @@ class InstallShTest(unittest.TestCase):
                             item = {"name": name, "browser_download_url": f"http://127.0.0.1:{self.server.server_port}/files/{name}"}
                             if api_digests:
                                 item["digest"] = "sha256:" + hashlib.sha256(payload).hexdigest()
+                            if name == "codex-package_SHA256SUMS" and manifest_digest is not None:
+                                item["digest"] = manifest_digest
                             assets.append(item)
                         body = json.dumps({"tag_name": "rust-v" + VERSION, "assets": assets}).encode()
                     else:
@@ -70,11 +74,20 @@ class InstallShTest(unittest.TestCase):
                             self.wfile.write(body[:len(body) // 2])
                             self.close_connection = True
                             return
-                        offset = int(self.headers["Range"].removeprefix("bytes=").removesuffix("-"))
-                        resume_offsets.append(offset)
-                        self.send_response(206)
-                        self.send_header("Content-Range", f"bytes {offset}-{len(body)-1}/{len(body)}")
-                        body = body[offset:]
+                        range_header = self.headers.get("Range")
+                        offset = int(range_header.removeprefix("bytes=").removesuffix("-")) if range_header else 0
+                        if range_header:
+                            resume_offsets.append(offset)
+                        if resume_mode == "rejected" and range_header:
+                            self.send_response(416)
+                            self.send_header("Content-Range", f"bytes */{len(body)}")
+                            body = b""
+                        elif resume_mode == "supported" and range_header:
+                            self.send_response(206)
+                            self.send_header("Content-Range", f"bytes {offset}-{len(body)-1}/{len(body)}")
+                            body = body[offset:]
+                        else:
+                            self.send_response(200)
                     else:
                         self.send_response(200)
                     self.send_header("Content-Length", str(len(body)))
@@ -99,7 +112,7 @@ class InstallShTest(unittest.TestCase):
             try:
                 args = ["sh", str(INSTALL_SCRIPT)]
                 if exact_version:
-                    args += ["--release", VERSION]
+                    args += ["--release", requested_version]
                 result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
                 if interrupt_download:
                     self.assertNotEqual(result.returncode, 0)
@@ -113,11 +126,21 @@ class InstallShTest(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join()
+            if expected_error is not None:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_error, result.stdout + result.stderr)
+                self.assertFalse((root / "bin/codex").exists())
+                self.assertEqual(config.read_text(), '# keep existing user configuration\n')
+                self.assertNotIn("/files/" + ASSET, requests)
+                return
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(requests, [
+            expected_requests = [
                 "/releases/tags/rust-v" + VERSION if exact_version else "/releases/latest",
                 "/files/codex-package_SHA256SUMS", "/files/" + ASSET,
-            ] * (2 if interrupt_download else 1))
+            ] * (2 if interrupt_download else 1)
+            if interrupt_download and resume_mode != "supported":
+                expected_requests.append("/files/" + ASSET)
+            self.assertEqual(requests, expected_requests)
             installed = root / "bin/codex"
             self.assertEqual(subprocess.check_output([str(installed), "--version"], text=True).strip(), "codex-cli " + VERSION)
             self.assertEqual(config.read_text(), '# keep existing user configuration\n')
@@ -125,6 +148,24 @@ class InstallShTest(unittest.TestCase):
 
     def test_interrupted_archive_survives_and_resumes(self):
         self.install_fixture(api_digests=False, exact_version=False, interrupt_download=True)
+
+    def test_interrupted_archive_restarts_when_range_is_ignored(self):
+        self.install_fixture(api_digests=True, exact_version=True,
+                             interrupt_download=True, resume_mode="ignored")
+
+    def test_interrupted_archive_restarts_when_range_is_rejected(self):
+        self.install_fixture(api_digests=True, exact_version=True,
+                             interrupt_download=True, resume_mode="rejected")
+
+    def test_wrong_version_stops_before_downloading_or_installing(self):
+        self.install_fixture(api_digests=True, exact_version=True,
+                             requested_version="0.162.1-ep.2",
+                             expected_error="did not match requested")
+
+    def test_invalid_manifest_digest_stops_before_package_download(self):
+        self.install_fixture(api_digests=True, exact_version=False,
+                             manifest_digest="sha256:" + "0" * 64,
+                             expected_error="checksum did not match")
 
     def test_gitee_standard_package_without_api_digest(self):
         self.install_fixture(api_digests=False, exact_version=False)
