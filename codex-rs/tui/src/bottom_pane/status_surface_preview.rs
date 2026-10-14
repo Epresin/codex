@@ -65,7 +65,7 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::FiveHourLimit => "primary 0%",
             StatusSurfacePreviewItem::WeeklyLimit => "secondary 0%",
             StatusSurfacePreviewItem::CodexVersion => "0.0.0",
-            StatusSurfacePreviewItem::ContextWindow => "Context 100% left (0 used / 200K)",
+            StatusSurfacePreviewItem::ContextWindow => "0/200k",
             StatusSurfacePreviewItem::ContextWindowSize => "0 window",
             StatusSurfacePreviewItem::UsedTokens => "0 used",
             StatusSurfacePreviewItem::TotalInputTokens => "0 in",
@@ -299,5 +299,19 @@ fn rate_limit_preview_copy(value: &str) -> Option<RateLimitPreviewCopy> {
         })
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_window_placeholder_uses_compact_ratio() {
+        let preview = StatusSurfacePreviewData::default();
+        assert_eq!(
+            preview.value_for(StatusSurfacePreviewItem::ContextWindow),
+            Some("0/200k")
+        );
     }
 }

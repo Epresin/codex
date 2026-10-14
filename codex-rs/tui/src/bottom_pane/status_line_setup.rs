@@ -116,7 +116,7 @@ pub(crate) enum StatusLineItem {
     /// Codex application version.
     CodexVersion,
 
-    /// Current context usage and capacity, matching the `/status` context summary.
+    /// Current context tokens / capacity in a compact ratio, such as `64k/1m`.
     ContextWindow,
 
     /// Total context window size in tokens.
@@ -197,7 +197,7 @@ impl StatusLineItem {
             }
             StatusLineItem::CodexVersion => "Codex application version",
             StatusLineItem::ContextWindow => {
-                "Remaining context and current tokens / capacity, as in /status (omitted when unknown)"
+                "Current context tokens / capacity, e.g. 64k/1m (omitted when unknown)"
             }
             StatusLineItem::ContextWindowSize => {
                 "Total context window size in tokens (omitted when unknown)"

@@ -58,12 +58,24 @@ API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
 
+## Compact context status line (0.162.1-ep.7)
+
+The `context-window` footer item now shows only current context tokens / capacity,
+such as `64k/1m` or `64k/256k`, with lowercase units and no label, percentage, or
+spaces. The status-line picker preview uses the same compact format.
+
+The token counts match `/status`; only this footer item's formatting is
+simplified. It still uses the last request's usage, not cumulative session
+consumption, so compaction reduces the displayed occupancy. Runtime context
+capacity takes precedence over configured capacity. Unknown or still-loading
+context usage is omitted. Default selection and explicit user customization are
+unchanged, and the `/status` card and other token display items are not modified.
+
 ## Context status line and Windows packages (0.162.1-ep.6)
 
-The default TUI footer now includes `context-window`, showing the same remaining
-percentage and current context tokens / capacity as `/status`. It uses the last
-request's usage, not cumulative session consumption, so compaction reduces the
-displayed occupancy. Unknown or still-loading context usage is omitted.
+EP.6 added `context-window` to the default TUI footer, showing the same remaining
+percentage and current context tokens / capacity as `/status`. EP.7 simplifies
+its display as described above, while preserving the underlying usage tracking.
 
 Use `/statusline` to toggle or reorder this item. Existing explicit
 `tui.status_line` configurations are preserved; add `context-window` there to
