@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.6`.
+The current EP release version is `0.162.1-ep.7`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -251,8 +251,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.6`.
-This release uses `rust-v0.162.1-ep.6`; earlier
+`codex --version` and the TUI header report `0.162.1-ep.7`.
+This release uses `rust-v0.162.1-ep.7`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background

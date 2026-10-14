@@ -27,7 +27,7 @@ if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent
 fi
 ```
 
-Then run `codex --version` and `codex`. The current release is `0.162.1-ep.6`.
+Then run `codex --version` and `codex`. The current release is `0.162.1-ep.7`.
 Use `codex update` for later releases. Existing configuration and authentication
 are preserved. Linux x86_64 musl and Windows x86_64 MSVC packages are provided;
 installing official npm/Homebrew packages would install upstream Codex, not EP.

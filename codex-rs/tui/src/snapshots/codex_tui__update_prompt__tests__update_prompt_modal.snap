@@ -3,7 +3,7 @@ source: tui/src/update_prompt.rs
 expression: terminal.backend()
 ---
 
-  Update available · 0.162.1-ep.6 → 9.9.9
+  Update available · 0.162.1-ep.7 → 9.9.9
   Release notes: https://github.com/Epresin/codex/releases
 
 › 1. Update now (runs `sh -c 's=$(curl -fsSL --connect-timeout 5 --max-time 8   
