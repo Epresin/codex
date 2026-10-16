@@ -1114,7 +1114,9 @@ impl App {
                 {
                     self.handle_clipboard_key_action(
                         tui,
-                        crate::chatwidget::KeyEventAction::PasteImage,
+                        crate::chatwidget::KeyEventAction::PasteImage {
+                            text_fallback: None,
+                        },
                     );
                 }
                 TuiEvent::Paste(pasted) => {
