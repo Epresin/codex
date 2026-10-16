@@ -275,6 +275,11 @@ No account tokens or model gateway keys are embedded in the update path.
 
 ## Standard release packaging
 
+For the isolated Windows CRLF build, migration-byte checks, executable/database
+verification, and native Python packaging entrypoint, see
+[Local EP Windows release tooling](ep-windows-build.md). These local tools do
+not install or publish anything; GitHub CI is not introduced by that change.
+
 After compiling the CLI, code-mode host, and platform helpers, call:
 
 ```sh

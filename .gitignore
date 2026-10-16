@@ -71,6 +71,8 @@ coverage/
 
 # personal files
 personal/
+# Local build caches, audit notes, and private recovery pointers are not sources.
+/.build-tools/
 
 # os
 .DS_Store
