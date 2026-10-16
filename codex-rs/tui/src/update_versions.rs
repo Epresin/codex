@@ -69,6 +69,13 @@ mod tests {
         assert_eq!(is_newer("1.0.0-rc.1", "1.0.0"), Some(false));
         assert_eq!(is_newer("0.162.1-ep.2", "0.162.1-ep.1"), Some(true));
         assert_eq!(is_newer("0.162.1-ep.10", "0.162.1-ep.2"), Some(true));
+        assert_eq!(is_newer("0.163.0-epr.1", "0.162.1-ep.7"), Some(true));
+        assert_eq!(is_newer("0.163.0-epr.10", "0.163.0-epr.2"), Some(true));
+        assert_eq!(is_newer("0.163.0-epr.1", "0.163.0-epr.2"), Some(false));
+        assert_eq!(
+            extract_version_from_latest_tag("rust-v0.163.0-epr.1").unwrap(),
+            "0.163.0-epr.1"
+        );
     }
 
     #[test]

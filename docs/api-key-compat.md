@@ -1,8 +1,8 @@
 # API-key and custom-base-URL compatibility
 
 This is an independent fork of the official OpenAI Codex CLI, based on
-`rust-v0.162.1` (`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`).
-The current EP release version is `0.162.1-ep.7`.
+`rust-v0.163.0` (`83086188ae0614bd882818ff1aa23f3194962012`).
+The current EPR release version is `0.163.0-epr.1`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -22,7 +22,7 @@ The upstream Apache-2.0 license and NOTICE are preserved.
    Windows clipboard through PowerShell as base64 PNG bytes and save the image
    locally in WSL, without mapping Windows temporary-file paths. Existing image
    shortcuts and ordinary text paste are preserved.
-5. Identify fork builds with an `-ep.N` version suffix. All update entrypoints
+5. Identify fork builds with an `-epr.N` version suffix (legacy `-ep.N` remains supported). The revision restarts at 1 when the upstream base changes. All update entrypoints
    use this repository's Release API and the upstream standalone installer.
    Package-manager update actions and OpenAI CDN/npm-archive fallback paths
    are removed; model inference configuration is unrelated to updates.
@@ -57,6 +57,21 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Upstream 0.163.0 and EPR naming (0.163.0-epr.1)
+
+- Merge the official `rust-v0.163.0` release while retaining the compact
+  `64k/1m` context footer and existing API-key/HTTP/WSL compatibility changes.
+- Use `-epr.N` for new releases; both installers continue accepting old `-ep.N` versions.
+- Preserve the official background compaction implementation and its default-off
+  `async_compaction` feature. Publishing this release does not enable it in user profiles.
+- Build Windows from an isolated CRLF checkout and Linux from LF source.
+  The state tree is identical to upstream; no migration or applied-checksum rewriting
+  is performed. Windows release acceptance includes cross-opening fresh test
+  databases with the official Windows binary for the same base version.
+- Older LF-built EP Windows databases are not silently converted. Back up
+  profiles before upgrading; the earlier checksum mismatch was a build-input
+  incompatibility, not proof of database corruption.
 
 ## Compact context status line (0.162.1-ep.7)
 
@@ -251,8 +266,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.162.1-ep.7`.
-This release uses `rust-v0.162.1-ep.7`; earlier
+`codex --version` and the TUI header report `0.163.0-epr.1`.
+This release uses `rust-v0.163.0-epr.1`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background
@@ -261,7 +276,7 @@ binary's legacy Gitee bootstrap is described in the migration note above.
 The existing 20-hour cache and confirmation UI are retained. The cache is
 `$CODEX_HOME/ep-version.json`, separate from old official version metadata.
 Checks are enabled by default; explicit user configuration takes precedence.
-Semantic-version comparison recognizes numeric `-ep.N` revisions.
+Semantic-version comparison recognizes numeric `-epr.N` and legacy `-ep.N` revisions.
 Background-service management and local CLI-to-daemon synchronization are
 preserved, rather than deleting functionality unrelated to release discovery.
 

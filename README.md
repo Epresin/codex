@@ -1,4 +1,4 @@
-> **EP fork:** This repository preserves official Codex history and adds API-key/custom-base-URL compatibility, HTTP/SSE defaults, and WSL image paste. Versions carry `-ep.N`. Updates use this repository's Releases and standard standalone packages, not official npm/Homebrew/CDN channels. See [the fork notes](docs/api-key-compat.md) for installation and maintenance.
+> **EP fork:** This repository preserves official Codex history and adds API-key/custom-base-URL compatibility, HTTP/SSE defaults, and WSL image paste. Versions carry `-epr.N` (`-ep.N` for older releases); the revision restarts at 1 when the upstream base changes. Updates use this repository's Releases and standard standalone packages, not official npm/Homebrew/CDN channels. See [the fork notes](docs/api-key-compat.md) for installation and maintenance.
 
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
@@ -27,7 +27,7 @@ if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent
 fi
 ```
 
-Then run `codex --version` and `codex`. The current release is `0.162.1-ep.7`.
+Then run `codex --version` and `codex`. The current release is `0.163.0-epr.1`.
 Use `codex update` for later releases. Existing configuration and authentication
 are preserved. Linux x86_64 musl and Windows x86_64 MSVC packages are provided;
 installing official npm/Homebrew packages would install upstream Codex, not EP.

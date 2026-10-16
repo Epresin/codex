@@ -182,6 +182,16 @@ class InputsTest(unittest.TestCase):
 
 
 class SafetyTest(unittest.TestCase):
+    def test_upstream_version_handles_legacy_ep_and_epr(self):
+        for version, expected in [
+            ("0.162.1-ep.7", "0.162.1"),
+            ("0.163.0-epr.1", "0.163.0"),
+            ("0.163.0", "0.163.0"),
+            ("0.163.0-alpha.1", "0.163.0-alpha.1"),
+        ]:
+            with self.subTest(version=version):
+                self.assertEqual(ep.upstream_version(version), expected)
+
     def test_new_output_never_clears_existing_files(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

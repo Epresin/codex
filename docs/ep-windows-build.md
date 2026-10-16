@@ -42,7 +42,7 @@ does not silently repair or convert them.
   fetches/hash-verifies ripgrep from its pinned manifest, or accepts an explicit
   Windows `--rg-bin` for a prepared/offline helper.
 - A clean, committed source tree and the official baseline ref locally
-  available. The default baseline is `rust-v0.162.1`; review and explicitly
+  available. The default baseline is `rust-v0.163.0`; review and explicitly
   update it when merging a different upstream release.
 
 No personal cache paths, credentials, database backups, or compiled binaries
@@ -86,7 +86,7 @@ This is intentional; it is not an instruction to change your editing checkout.
 python scripts/ep_windows_release.py verify `
   --build-state D:\Builds\ep-windows-001\build-state.json `
   --output-dir D:\Builds\ep-verification-001 `
-  --reference-exe D:\ReferenceBinaries\official-codex-0.162.1.exe
+  --reference-exe D:\ReferenceBinaries\official-codex-0.163.0.exe
 ```
 
 Supply an independently verified **official Windows binary for the same base

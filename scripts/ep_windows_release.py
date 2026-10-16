@@ -79,6 +79,10 @@ def new_directory(path):
     return path
 
 
+def upstream_version(version):
+    return re.sub(r"-(?:ep|epr)\.\d+$", "", version)
+
+
 def workspace_version(repo):
     text = (repo / "codex-rs/Cargo.toml").read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
@@ -511,7 +515,7 @@ def verify(args):
                 [str(reference), "--version"], cwd=home, env=env, text=True, timeout=45
             ).strip()
             require(
-                version == "codex-cli " + state["version"].split("-ep.")[0],
+                version == "codex-cli " + upstream_version(state["version"]),
                 "Reference is not the expected upstream version",
             )
             official = probe(reference, output / "reference-fresh")
@@ -743,7 +747,7 @@ def main():
     for command in (check, build_parser, verify_parser, package_parser):
         command.add_argument(
             "--upstream-ref",
-            default="rust-v0.162.1",
+            default="rust-v0.163.0",
             help="Explicit official baseline available in local Git",
         )
     args = parser.parse_args()
