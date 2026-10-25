@@ -1,8 +1,8 @@
 # API-key and custom-base-URL compatibility
 
 This is an independent fork of the official OpenAI Codex CLI, based on
-`rust-v0.163.0` (`83086188ae0614bd882818ff1aa23f3194962012`).
-The current EPR release version is `0.163.0-epr.1`.
+`rust-v0.164.0` (`6aaac694803004a63c6f393d153c96d22521a6b9`).
+The current EPR source version is `0.164.0-epr.1`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,25 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Upstream 0.164.0 (0.164.0-epr.1)
+
+- Merge the official `rust-v0.164.0` tag, including fullscreen transcript image
+  previews for Kitty/Sixel terminals, reusable input presets, and inline model
+  and permission selection. Preserve upstream fixes and dependency updates.
+- Retain the existing API-key/custom-base-URL image and model-catalog behavior,
+  native Responses HTTP/SSE default, WSL image paste, default MultiAgentV2 with
+  explicit V1 opt-out, saved Ultra preference, and compact context footer.
+- Keep fork update discovery, GitHub-first/Cloudflare-fallback downloads, and
+  legacy `-ep.N` installer compatibility. The EPR revision restarts at 1 for
+  this upstream base; upstream npm/Homebrew packages do not contain these patches.
+- Use the upstream-pinned Rust 1.99.1 toolchain and V8 152.2.0 artifacts. Rebuild
+  binaries from this source version; never relabel or reuse an earlier binary.
+- Preserve the official state source and default-off `async_compaction` setting.
+  Windows builds still require an isolated CRLF checkout and same-base official
+  Windows cross-open verification. Do not rewrite migrations or applied checksums.
+- Source preparation and local packaging do not publish a GitHub Release or
+  modify an installed CLI or user profile by themselves.
 
 ## Upstream 0.163.0 and EPR naming (0.163.0-epr.1)
 
@@ -266,8 +285,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.163.0-epr.1`.
-This release uses `rust-v0.163.0-epr.1`; earlier
+`codex --version` and the TUI header report `0.164.0-epr.1`.
+The corresponding version tag is `rust-v0.164.0-epr.1`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background

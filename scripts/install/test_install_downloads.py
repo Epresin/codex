@@ -19,7 +19,7 @@ import threading
 import unittest
 
 HERE = Path(__file__).resolve().parent
-VERSION = "0.163.0-epr.1"
+VERSION = "0.164.0-epr.1"
 ASSET = "codex-package-x86_64-unknown-linux-musl.tar.gz"
 PRIMARY = "https://github.com/Epresin/codex/fixture"
 FALLBACK = "https://gh.mccts.cn/Epresin/codex/fixture"
@@ -241,7 +241,7 @@ class DownloadContracts:
         self.assertIn(version, result.stdout)
 
     def test_malformed_epr_version_is_rejected(self):
-        version = "0.163.0-epr.1/invalid"
+        version = "0.164.0-epr.1/invalid"
         result = self.run_operation("resolve", release=version, metadata=json.dumps({"tag_name": "rust-v" + version, "assets": []}))
         self.assertNotEqual(result.returncode, 0)
 

@@ -79,6 +79,17 @@ mod tests {
     }
 
     #[test]
+    fn epr_revision_restarts_after_upstream_upgrade() {
+        assert_eq!(is_newer("0.164.0-epr.1", "0.163.0-epr.1"), Some(true));
+        assert_eq!(is_newer("0.164.0-epr.1", "0.163.0-epr.10"), Some(true));
+        assert_eq!(is_newer("0.163.0-epr.10", "0.164.0-epr.1"), Some(false));
+        assert_eq!(
+            extract_version_from_latest_tag("rust-v0.164.0-epr.1").unwrap(),
+            "0.164.0-epr.1"
+        );
+    }
+
+    #[test]
     fn plain_semver_comparisons_work() {
         assert_eq!(is_newer("0.11.1", "0.11.0"), Some(true));
         assert_eq!(is_newer("0.11.0", "0.11.1"), Some(false));

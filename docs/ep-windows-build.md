@@ -7,17 +7,13 @@ There is no new CI workflow in this change. Keep the existing Linux entrypoint
 
 ## Why the isolated checkout matters
 
-For the audited `rust-v0.162.1` baseline, the state source tree in EP is identical
-to upstream. SQLx hashes the exact embedded migration bytes. The verified
-official Windows binary uses CRLF checksums, whereas the earlier published EP.7
-Windows binary was compiled from LF SQL. This is a build-input incompatibility,
-not evidence of a corrupt database or a fork-specific schema change.
+The Windows release build is anchored to the official `rust-v0.164.0` baseline. SQLx hashes the exact embedded migration bytes. The earlier published EP.7 Windows binary was compiled from LF SQL; that incompatibility is a build-input issue, not evidence of database corruption or a fork-specific schema change.
 
 `scripts/ep_windows_release.py` explicitly sets `core.autocrlf=true` **only in a
 new isolated checkout**, before checking out the selected commit. It checks the
 whole state source tree against an explicit local upstream Git ref, then checks
 every SQL file in all six migration families byte-for-byte against the CRLF
-form of its Git blob (75 files at this baseline). It never edits migration SQL,
+form of its Git blob across the entire migration set. It never edits migration SQL,
 rewrites applied checksums, disables SQLx validation, or changes the original
 repository's Git configuration. This makes the observed Windows artifact
 behavior explicit; it is not a claim that upstream's workflow explicitly pins
@@ -42,8 +38,7 @@ does not silently repair or convert them.
   fetches/hash-verifies ripgrep from its pinned manifest, or accepts an explicit
   Windows `--rg-bin` for a prepared/offline helper.
 - A clean, committed source tree and the official baseline ref locally
-  available. The default baseline is `rust-v0.163.0`; review and explicitly
-  update it when merging a different upstream release.
+  available. The default baseline is `rust-v0.164.0`; review and explicitly update it when merging a different upstream release.
 
 No personal cache paths, credentials, database backups, or compiled binaries
 belong in Git. `.build-tools/` and `dist/` stay ignored. The script does not
@@ -86,11 +81,11 @@ This is intentional; it is not an instruction to change your editing checkout.
 python scripts/ep_windows_release.py verify `
   --build-state D:\Builds\ep-windows-001\build-state.json `
   --output-dir D:\Builds\ep-verification-001 `
-  --reference-exe D:\ReferenceBinaries\official-codex-0.163.0.exe
+  --reference-exe D:\ReferenceBinaries\official-codex-0.164.0.exe
 ```
 
 Supply an independently verified **official Windows binary for the same base
-version**. The script checks its reported version and records its SHA-256; it
+version**. The script checks that it reports `codex-cli 0.164.0` and records its SHA-256; it
 does not download or authenticate the reference binary on your behalf.
 `--reference-exe` is optional for a fresh-database smoke check, but a fresh-only
 result is **not** the cross-compatibility acceptance required for a release.

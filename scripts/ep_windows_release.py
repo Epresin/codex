@@ -20,6 +20,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_UPSTREAM_REF = "rust-v0.164.0"
 TARGET = "x86_64-pc-windows-msvc"
 FAMILIES = {
     "state_5.sqlite": "migrations",
@@ -747,7 +748,7 @@ def main():
     for command in (check, build_parser, verify_parser, package_parser):
         command.add_argument(
             "--upstream-ref",
-            default="rust-v0.163.0",
+            default=DEFAULT_UPSTREAM_REF,
             help="Explicit official baseline available in local Git",
         )
     args = parser.parse_args()
