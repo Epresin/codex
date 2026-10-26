@@ -27,7 +27,7 @@ if s=$(curl -fsSL --connect-timeout 5 --max-time 8 https://raw.githubusercontent
 fi
 ```
 
-Then run `codex --version` and `codex`. The current source version is `0.164.0-epr.1`; check this repository's Releases for published packages.
+Then run `codex --version` and `codex`. The current source version is `0.164.0-epr.2`; check this repository's Releases for published packages.
 Use `codex update` for later releases. Existing configuration and authentication
 are preserved. Linux x86_64 musl and Windows x86_64 MSVC packages are provided;
 installing official npm/Homebrew packages would install upstream Codex, not EP.

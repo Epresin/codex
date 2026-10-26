@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.164.0` (`6aaac694803004a63c6f393d153c96d22521a6b9`).
-The current EPR source version is `0.164.0-epr.1`.
+The current EPR source version is `0.164.0-epr.2`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,20 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## EPR 2 Windows Terminal geometry and release workflow
+
+- Use Windows Terminal's fixed 10x20 virtual Sixel cell geometry instead of
+  depending on an unavailable native Windows pixel-size query. Terminal identity,
+  not the operating system, selects this path, so it also applies to Linux Codex
+  launched inside Windows Terminal through WSL. Other terminal and Kitty paths
+  remain unchanged; no active terminal query or input-reader change is added.
+- Add project-level agent instructions and a reusable release workflow covering
+  commits, both platform builds, tags, GitHub Release verification, and recovery.
+- Add a small offline version guard: increment EPR only within the same official
+  base, and reset to epr.1 for the first release on a newer official base.
+- Keep official 0.164.0, the pinned toolchain/dependencies, and migration sources
+  unchanged. This is a fork revision, not another upstream merge.
 
 ## Upstream 0.164.0 (0.164.0-epr.1)
 
@@ -285,8 +299,8 @@ entrypoints. This does not change the already-published EP.2 binaries. No binary
 
 ## Version identity and update checks
 
-`codex --version` and the TUI header report `0.164.0-epr.1`.
-The corresponding version tag is `rust-v0.164.0-epr.1`; earlier
+`codex --version` and the TUI header report `0.164.0-epr.2`.
+The corresponding version tag is `rust-v0.164.0-epr.2`; earlier
 `api-key-compat-v...` tags remain unchanged.
 
 The startup prompt, `codex update`, update diagnostics, and the background
@@ -350,6 +364,9 @@ Both installer scripts passed syntax checks. These are targeted checks, not
 a claim that the complete upstream test suite was run.
 
 ## Maintaining the fork
+
+For the default end-to-end delivery workflow, revision-reset rules, version guard,
+and resumable GitHub publication, see [EP release workflow](ep-release-workflow.md).
 
 - `upstream` points to the official `openai/codex` Git repository.
 - `origin` points to the public GitHub fork `Epresin/codex`, whose parent is

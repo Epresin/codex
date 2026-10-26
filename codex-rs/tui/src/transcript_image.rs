@@ -9,6 +9,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
+use codex_terminal_detection::TerminalName;
+use codex_terminal_detection::terminal_info;
 use crossterm::cursor::MoveTo;
 use crossterm::cursor::RestorePosition;
 use crossterm::cursor::SavePosition;
@@ -48,6 +50,12 @@ pub(crate) struct TranscriptImage {
 }
 
 pub(crate) fn terminal_cell_size() -> Option<(u32, u32)> {
+    // Windows Terminal uses a fixed virtual Sixel grid, independent of font zoom.
+    // Match the terminal rather than the OS so this also applies inside WSL.
+    if matches!(terminal_info().name, TerminalName::WindowsTerminal) {
+        return Some((10, 20));
+    }
+
     crossterm::terminal::window_size()
         .ok()
         .filter(|size| size.columns > 0 && size.rows > 0 && size.width > 0 && size.height > 0)
@@ -67,8 +75,8 @@ impl TranscriptImage {
         if columns == 0 || !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
             return None;
         }
-        // Sixel paints physical pixels rather than sizing to a Kitty cell rectangle. Guessing
-        // the cell size could paint beyond the reserved rows and cover the composer.
+        // Sixel uses terminal-defined pixel coordinates rather than a Kitty cell rectangle.
+        // Guessing the cell size could paint beyond the reserved rows and cover the composer.
         let (cell_width, cell_height) = match protocol {
             ImageProtocol::Sixel => terminal_cell_size()?,
             // Kitty scales to cell coordinates itself. Use a stable, typical cell aspect ratio.
