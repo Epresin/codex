@@ -1,4 +1,5 @@
 use super::*;
+use codex_models_manager::model_info::model_info_from_slug;
 use codex_tools::JsonSchemaPrimitiveType;
 use codex_tools::JsonSchemaType;
 use pretty_assertions::assert_eq;
@@ -410,5 +411,59 @@ fn list_agents_tool_status_schema_includes_interrupted() {
             "shutdown",
             "not_found"
         ])
+    );
+}
+
+#[test_case::test_case(MultiAgentVersion::V1; "v1")]
+#[test_case::test_case(MultiAgentVersion::V2; "v2")]
+fn subagent_model_catalog_tool_description_lists_all_visible_supported_models(
+    version: MultiAgentVersion,
+) {
+    let mut models = (0..7)
+        .map(|index| {
+            let mut model = ModelPreset::from(model_info_from_slug(&format!("model-{index}")));
+            model.show_in_picker = true;
+            model.description = format!("Description for model {index}");
+            model
+        })
+        .collect::<Vec<_>>();
+    let mut hidden = models[0].clone();
+    hidden.model = "hidden-model".to_string();
+    hidden.show_in_picker = false;
+    models.insert(0, hidden);
+    let mut disabled = models[1].clone();
+    disabled.model = "disabled-model".to_string();
+    disabled.multi_agent_version = Some(MultiAgentVersion::Disabled);
+    models.insert(1, disabled);
+    let options = SpawnAgentToolOptions {
+        available_models: models,
+        multi_agent_version: version,
+        expose_spawn_agent_model_overrides: true,
+        ..Default::default()
+    };
+    let description = if version == MultiAgentVersion::V2 {
+        let ToolSpec::Function(tool) =
+            create_spawn_agent_tool_v2(options, /*description_override*/ None)
+        else {
+            panic!("spawn_agent v2 should be a function tool");
+        };
+        tool.description
+    } else {
+        let ToolSpec::Namespace(namespace) = create_spawn_agent_tool_v1(options) else {
+            panic!("spawn_agent v1 should be a namespace tool");
+        };
+        let Some(ResponsesApiNamespaceTool::Function(tool)) = namespace.tools.first() else {
+            panic!("spawn_agent should be a namespace function tool");
+        };
+        tool.description.clone()
+    };
+
+    for index in 0..7 {
+        assert!(description.contains(&format!("- `model-{index}`: Description for model {index}")));
+    }
+    assert!(!description.contains("hidden-model"));
+    assert_eq!(
+        description.contains("disabled-model"),
+        version != MultiAgentVersion::V2
     );
 }

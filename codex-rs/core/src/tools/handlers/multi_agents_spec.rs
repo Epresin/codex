@@ -1,4 +1,3 @@
-use crate::agent::child_config::MAX_SPAWN_AGENT_MODEL_OVERRIDES;
 use crate::agent::child_config::model_supports_multi_agent_backend;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -822,7 +821,6 @@ fn spawn_agent_models_description(
         .iter()
         .filter(|model| model.show_in_picker)
         .filter(|model| model_supports_multi_agent_backend(model, multi_agent_version))
-        .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES)
         .collect();
     if visible_models.is_empty() {
         return "No picker-visible model overrides are currently loaded.".to_string();

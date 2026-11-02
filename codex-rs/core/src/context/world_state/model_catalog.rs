@@ -1,5 +1,5 @@
 //! Keeps spawn model choices in append-only context instead of the tool schema.
-//! Snapshots compare the bounded text actually shown to the model; catalog refreshes
+//! Snapshots compare the text actually shown to the model; catalog refreshes
 //! never rewrite earlier messages, and missing retained context gets a fresh catalog.
 
 use super::PreviousSectionState;
@@ -7,7 +7,6 @@ use super::SectionTransition;
 use super::WorldStateHash;
 use super::WorldStateSection;
 use super::WorldStateUpdate;
-use crate::agent::child_config::MAX_SPAWN_AGENT_MODEL_OVERRIDES;
 use crate::agent::child_config::model_supports_multi_agent_backend;
 use crate::context::ContextualUserFragment;
 use crate::context::environment_context::push_xml_escaped_text;
@@ -19,10 +18,7 @@ use codex_protocol::models::input_text;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::protocol::MultiAgentVersion;
 
-// Includes XML escaping and markers; at most 1,000 tokens even with byte fallback.
-const MAX_RENDERED_BYTES: usize = 1_000;
 const MAX_DESCRIPTION_CHARS: usize = 250;
-const OMITTED_NOTICE: &str = "Additional model choices omitted.\n";
 
 /// The current model choices, or an empty catalog to invalidate a retained listing.
 #[derive(Clone, Default)]
@@ -38,15 +34,12 @@ impl ModelCatalogState {
             .iter()
             .filter(|model| model.show_in_picker)
             .filter(|model| model_supports_multi_agent_backend(model, multi_agent_version))
-            .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES)
             .collect::<Vec<_>>();
         // Stabilize the selected choices independently of their picker ordering.
         models.sort_by(|left, right| left.model.cmp(&right.model));
         if models.is_empty() {
             catalog.push_str("No picker-visible model overrides are currently loaded.\n");
         }
-        let (open, close) = Self::type_markers();
-        let body_budget = MAX_RENDERED_BYTES - open.len() - close.len() - 2;
         for model in models {
             let mut line = format!("- `{}`: ", model.model);
             line.extend(model.description.chars().take(MAX_DESCRIPTION_CHARS));
@@ -78,12 +71,6 @@ impl ModelCatalogState {
             }
             let mut escaped = String::new();
             push_xml_escaped_text(&mut escaped, &line);
-            if catalog.len() + escaped.len() + 1 + OMITTED_NOTICE.len() > body_budget {
-                // Keep identifiers and capability lists intact instead of advertising
-                // a truncated model ID, reasoning effort, or service tier.
-                catalog.push_str(OMITTED_NOTICE);
-                break;
-            }
             catalog.push_str(&escaped);
             catalog.push('\n');
         }
@@ -161,3 +148,7 @@ impl WorldStateSection for ModelCatalogState {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "model_catalog_tests.rs"]
+mod tests;

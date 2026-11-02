@@ -18,8 +18,6 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::MultiAgentVersion;
 
-pub(crate) const MAX_SPAWN_AGENT_MODEL_OVERRIDES: usize = 5;
-
 pub(crate) fn model_supports_multi_agent_backend(
     model: &ModelPreset,
     multi_agent_version: MultiAgentVersion,
@@ -340,7 +338,6 @@ fn find_spawn_agent_model_name(
                 .iter()
                 .filter(|model| model.show_in_picker)
                 .filter(|model| model_supports_multi_agent_backend(model, multi_agent_version))
-                .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES)
                 .map(|model| model.model.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -371,3 +368,7 @@ fn validate_spawn_agent_reasoning_effort(
         "Reasoning effort `{requested_reasoning_effort}` is not supported for model `{model}`. Supported reasoning efforts: {supported}"
     ))
 }
+
+#[cfg(test)]
+#[path = "child_config_tests.rs"]
+mod tests;

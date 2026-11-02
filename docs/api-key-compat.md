@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.164.0` (`6aaac694803004a63c6f393d153c96d22521a6b9`).
-The current EPR source version is `0.164.0-epr.2`.
+The current EPR source version is `0.164.0-epr.3`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,17 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## EPR 3 complete subagent model listings
+
+- Show all picker-visible, backend-compatible models in the subagent tool
+  description and contextual model catalog instead of only the first five.
+- Do not drop later models when the contextual catalog exceeds its former
+  1,000-byte budget. Preserve bounded per-model descriptions and XML escaping.
+- Include every eligible candidate in unknown-model errors. Exact model lookup,
+  backend compatibility checks, reasoning validation, and concurrency limits
+  are unchanged; no model IDs are hardcoded.
+- Keep the official 0.164.0 baseline and dependencies unchanged.
 
 ## EPR 2 Windows Terminal geometry and release workflow
 
