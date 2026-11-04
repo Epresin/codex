@@ -3765,7 +3765,7 @@ async fn model_reasoning_selection_popup_snapshot() {
 }
 
 #[tokio::test]
-async fn model_advanced_reasoning_selection_popup_snapshot() {
+async fn model_reasoning_selection_popup_current_ultra_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::Ultra));
 
@@ -3780,10 +3780,10 @@ async fn model_advanced_reasoning_selection_popup_snapshot() {
             description: "Maximum available reasoning".to_string(),
         },
     ]);
-    chat.open_advanced_reasoning_popup(preset);
+    chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("model_advanced_reasoning_selection_popup", popup);
+    assert_chatwidget_snapshot!("model_reasoning_selection_popup_current_ultra", popup);
 }
 
 #[tokio::test]
@@ -3846,13 +3846,6 @@ async fn select_ultra_with_multi_agent_thread_limit(max_threads: usize) -> (bool
     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    let advanced_preset = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|event| match event {
-        AppEvent::OpenAdvancedReasoningPopup { model } => Some(model),
-        _ => None,
-    });
-    chat.open_advanced_reasoning_popup(advanced_preset.expect("advanced reasoning popup"));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
     let mut selected_ultra = false;
     let mut warnings = Vec::new();
     while let Ok(event) = rx.try_recv() {
@@ -3899,11 +3892,23 @@ async fn max_reasoning_selection_persists_model_selection() {
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
     let mut preset = get_available_model(&chat, "gpt-5.5");
-    preset.supported_reasoning_efforts = vec![ReasoningEffortPreset {
-        effort: ReasoningEffortConfig::Max,
-        description: "Maximum reasoning".to_string(),
-    }];
-    chat.open_advanced_reasoning_popup(preset);
+    preset.supported_reasoning_efforts = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "High reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Max,
+            description: "Maximum reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Ultra,
+            description: "Ultra reasoning".to_string(),
+        },
+    ];
+    chat.open_reasoning_popup(preset);
+    while rx.try_recv().is_ok() {}
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
@@ -4152,7 +4157,7 @@ async fn reasoning_up_shortcut_does_not_silently_enter_ultra() {
         insta::allow_duplicates! {
             insta::assert_snapshot!(
                 messages.join("").replace(model_path, "<model path>"),
-                @"• Ultra is available under /model → <model path> → More reasoning…"
+                @"• Ultra is available under /model → <model path> → Ultra"
             );
         }
     }
@@ -4285,6 +4290,120 @@ async fn advanced_only_reasoning_option_requires_explicit_selection() {
             | AppEvent::ApplyAdvancedReasoning { .. }
             | AppEvent::PersistModelSelection { .. }
     )));
+}
+
+#[tokio::test]
+async fn advanced_only_reasoning_defaults_require_explicit_selection() {
+    for effort in [ReasoningEffortConfig::Max, ReasoningEffortConfig::Ultra] {
+        for advertised in [false, true] {
+            let (mut chat, mut events, _ops) = make_chatwidget_manual(Some("gpt-5.5")).await;
+            let mut preset = get_available_model(&chat, "gpt-5.5");
+            preset.default_reasoning_effort = effort.clone();
+            preset.supported_reasoning_efforts = if advertised {
+                vec![ReasoningEffortPreset {
+                    effort: effort.clone(),
+                    description: "Advanced reasoning".to_string(),
+                }]
+            } else {
+                Vec::new()
+            };
+            while events.try_recv().is_ok() {}
+            chat.open_reasoning_popup(preset);
+            assert!(chat.has_active_view());
+            assert!(
+                events.try_recv().is_err(),
+                "opening a picker must not apply {effort:?}"
+            );
+            chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+            let events = std::iter::from_fn(|| events.try_recv().ok()).collect::<Vec<_>>();
+            assert!(events.iter().any(|event| match event {
+                AppEvent::ApplyAdvancedReasoning {
+                    effort: selected, ..
+                }
+                | AppEvent::PersistModelSelection {
+                    effort: Some(selected),
+                    ..
+                } => selected == &effort,
+                _ => false,
+            }));
+            assert!(chat.bottom_pane.no_modal_or_popup_active());
+        }
+    }
+}
+
+#[tokio::test]
+async fn reasoning_picker_only_shows_advertised_advanced_efforts() {
+    for effort in [
+        None,
+        Some(ReasoningEffortConfig::Max),
+        Some(ReasoningEffortConfig::Ultra),
+    ] {
+        let (mut chat, _events, _ops) = make_chatwidget_manual(Some("gpt-5.5")).await;
+        let mut preset = get_available_model(&chat, "gpt-5.5");
+        preset
+            .supported_reasoning_efforts
+            .retain(|option| !ChatWidget::is_advanced_reasoning_effort(&option.effort));
+        if let Some(effort) = effort.clone() {
+            preset
+                .supported_reasoning_efforts
+                .push(ReasoningEffortPreset {
+                    effort,
+                    description: "Advanced reasoning".to_string(),
+                });
+        }
+        chat.open_reasoning_popup(preset);
+        let popup = render_bottom_popup(&chat, /*width*/ 100);
+        assert_eq!(
+            popup.contains(". Max"),
+            effort == Some(ReasoningEffortConfig::Max)
+        );
+        assert_eq!(
+            popup.contains(". Ultra"),
+            effort == Some(ReasoningEffortConfig::Ultra)
+        );
+        assert!(!popup.contains("More reasoning"));
+    }
+}
+
+#[tokio::test]
+async fn direct_advanced_reserve_reasoning_selection_stays_session_only() {
+    for effort in [ReasoningEffortConfig::Max, ReasoningEffortConfig::Ultra] {
+        let (mut chat, mut events, _ops) = make_chatwidget_manual(Some("gpt-5.5")).await;
+        let thread_id = ThreadId::new();
+        chat.thread_id = Some(thread_id);
+        let mut preset = get_available_model(&chat, "gpt-5.5");
+        preset.model = crate::model_catalog::LUNA_RESERVE_MODEL.to_string();
+        preset.default_reasoning_effort = ReasoningEffortConfig::Low;
+        preset.supported_reasoning_efforts = vec![
+            ReasoningEffortPreset {
+                effort: ReasoningEffortConfig::Low,
+                description: "Low reasoning".to_string(),
+            },
+            ReasoningEffortPreset {
+                effort: effort.clone(),
+                description: "Advanced reasoning".to_string(),
+            },
+        ];
+        chat.open_reasoning_popup(preset);
+        chat.handle_key_event(KeyEvent::from(KeyCode::End));
+        let popup = render_bottom_popup(&chat, /*width*/ 100);
+        assert!(!popup.contains("s session"));
+        while events.try_recv().is_ok() {}
+        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        let events = std::iter::from_fn(|| events.try_recv().ok()).collect::<Vec<_>>();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::UpdateLunaReserveReasoning { thread_id: selected_thread, effort: Some(selected) }
+                if selected_thread == &thread_id && selected == &effort
+        )));
+        assert!(events.iter().all(|event| !matches!(
+            event,
+            AppEvent::ApplyAdvancedReasoning { .. }
+                | AppEvent::PersistModelSelection { .. }
+                | AppEvent::SelectSessionModel { .. }
+                | AppEvent::AstraSelectedFromModelPicker { .. }
+        )));
+    }
 }
 
 #[tokio::test]

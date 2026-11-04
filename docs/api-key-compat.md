@@ -2,7 +2,7 @@
 
 This is an independent fork of the official OpenAI Codex CLI, based on
 `rust-v0.164.0` (`6aaac694803004a63c6f393d153c96d22521a6b9`).
-The current EPR source version is `0.164.0-epr.3`.
+The current EPR source version is `0.164.0-epr.4`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,17 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## EPR 4 direct Max and Ultra selection
+
+- Show model-supported Max and Ultra directly in the reasoning-level picker,
+  alongside the other efforts, instead of behind a More reasoning submenu.
+- Preserve explicit selection, saved defaults, the session-only action, Plan-mode
+  scope, and Ultra usage/concurrency warnings. Models do not gain unsupported efforts.
+- Keep the shortcut guard against unintentionally entering Ultra; its hint now
+  points to the main reasoning picker.
+- Keep the official 0.164.0 baseline, dependencies, migrations, and existing EP
+  customizations unchanged.
 
 ## EPR 3 complete subagent model listings
 

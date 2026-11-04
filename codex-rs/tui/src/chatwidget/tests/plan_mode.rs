@@ -384,11 +384,18 @@ async fn advanced_reasoning_selection_in_plan_mode_uses_expected_scope() {
         let _ = drain_insert_history(&mut rx);
 
         let mut preset = get_available_model(&chat, "gpt-5.5");
-        preset.supported_reasoning_efforts = vec![ReasoningEffortPreset {
-            effort: effort.clone(),
-            description: "Advanced reasoning".to_string(),
-        }];
-        chat.open_advanced_reasoning_popup(preset);
+        preset.supported_reasoning_efforts = vec![
+            ReasoningEffortPreset {
+                effort: ReasoningEffortConfig::Low,
+                description: "Low reasoning".to_string(),
+            },
+            ReasoningEffortPreset {
+                effort: effort.clone(),
+                description: "Advanced reasoning".to_string(),
+            },
+        ];
+        chat.open_reasoning_popup(preset);
+        chat.handle_key_event(KeyEvent::from(KeyCode::End));
         chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();

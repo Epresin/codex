@@ -522,10 +522,9 @@ async fn astra_picker_confirms_the_model_at_application_after_an_automatic_updat
                 description: "Low effort".into(),
             },
         ];
+        app.chat_widget.open_reasoning_popup(preset);
         if picker.starts_with("advanced") {
-            app.chat_widget.open_advanced_reasoning_popup(preset);
-        } else {
-            app.chat_widget.open_reasoning_popup(preset);
+            app.chat_widget.handle_key_event(KeyCode::End.into());
         }
         assert!(app.chat_widget.has_active_view());
         if !picker.contains("queued") {

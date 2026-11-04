@@ -33,8 +33,7 @@ async fn session_model_selection_accepts_final_choices_without_saving() {
         }
         match picker {
             "auto" | "single" | "default_only" => chat.open_model_popup_with_presets(vec![preset]),
-            "max" | "ultra" => chat.open_advanced_reasoning_popup(preset),
-            "reasoning" => {
+            "reasoning" | "max" | "ultra" => {
                 chat.set_reasoning_effort(Some(effort.clone()));
                 preset
                     .supported_reasoning_efforts
@@ -64,16 +63,16 @@ async fn session_model_selection_accepts_final_choices_without_saving() {
 
 #[tokio::test]
 async fn session_model_selection_notifies_the_original_task_after_each_final_astra_choice() {
-    for picker in ["model", "reasoning", "advanced"] {
+    for picker in ["model", "reasoning", "max", "ultra"] {
         let (mut chat, mut events, _ops) = make_chatwidget_manual(Some("gpt-5.5")).await;
         let thread_id = ThreadId::new();
         chat.thread_id = Some(thread_id);
         let mut preset = get_available_model(&chat, "gpt-5.5");
         preset.model = "gpt-6-astra".into();
-        let effort = if picker == "advanced" {
-            ReasoningEffortConfig::Max
-        } else {
-            ReasoningEffortConfig::High
+        let effort = match picker {
+            "max" => ReasoningEffortConfig::Max,
+            "ultra" => ReasoningEffortConfig::Ultra,
+            _ => ReasoningEffortConfig::High,
         };
         preset.default_reasoning_effort = effort.clone();
         preset.supported_reasoning_efforts = vec![ReasoningEffortPreset {
@@ -82,7 +81,7 @@ async fn session_model_selection_notifies_the_original_task_after_each_final_ast
         }];
         match picker {
             "model" => chat.open_model_popup_with_presets(vec![preset]),
-            "reasoning" => {
+            "reasoning" | "max" | "ultra" => {
                 preset
                     .supported_reasoning_efforts
                     .push(ReasoningEffortPreset {
@@ -91,7 +90,6 @@ async fn session_model_selection_notifies_the_original_task_after_each_final_ast
                     });
                 chat.open_reasoning_popup(preset);
             }
-            "advanced" => chat.open_advanced_reasoning_popup(preset),
             _ => unreachable!(),
         }
         while events.try_recv().is_ok() {}

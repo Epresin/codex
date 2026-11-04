@@ -2302,9 +2302,6 @@ impl App {
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
             }
-            AppEvent::OpenAdvancedReasoningPopup { model } => {
-                self.chat_widget.open_advanced_reasoning_popup(model);
-            }
             AppEvent::ApplyAdvancedReasoning { model, effort } => {
                 self.app_event_tx.send(AppEvent::FollowTranscript);
                 if self
