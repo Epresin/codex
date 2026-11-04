@@ -563,12 +563,11 @@ impl ChatWidget {
             }
 
             let description = match &effort {
-                ReasoningEffortConfig::Max => Some(
-                    "For difficult problems when quality matters more than speed · higher usage"
-                        .to_string(),
-                ),
+                ReasoningEffortConfig::Max => {
+                    Some("For difficult problems when quality matters more than speed".to_string())
+                }
                 ReasoningEffortConfig::Ultra => {
-                    Some("For demanding work using multiple agents · highest usage".to_string())
+                    Some("For demanding work using multiple agents".to_string())
                 }
                 _ => supported
                     .iter()
@@ -578,11 +577,7 @@ impl ChatWidget {
             };
 
             let show_warning = warn_for_model && warn_effort.as_ref() == Some(&effort);
-            let selected_description = if Self::is_advanced_reasoning_effort(&effort) {
-                description
-                    .as_ref()
-                    .map(|description| format!("{description}\n⚠ Consumes usage limits faster"))
-            } else if show_warning {
+            let selected_description = if show_warning {
                 warning_text.as_ref().map(|warning_message| {
                     description.as_ref().map_or_else(
                         || warning_message.clone(),
