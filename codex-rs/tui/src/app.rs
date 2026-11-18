@@ -1285,6 +1285,7 @@ impl App {
                         tui,
                         crate::chatwidget::KeyEventAction::PasteImage {
                             text_fallback: None,
+                            context: ClipboardPasteContext::Composer,
                         },
                     );
                 }
