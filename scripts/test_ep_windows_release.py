@@ -47,7 +47,7 @@ class InputsTest(unittest.TestCase):
         )
         directory = self.repo / ".github/workflows"
         directory.mkdir(parents=True)
-        binaries = "codex codex-code-mode-host codex-responses-api-proxy codex-windows-sandbox-setup codex-windows-sandbox-service codex-command-runner codex-app-server"
+        binaries = "codex codex-code-mode-host codex-exec-server codex-responses-api-proxy codex-windows-sandbox-setup codex-windows-sandbox-service codex-command-runner codex-app-server"
         (directory / "rust-release-windows.yml").write_text(
             f'env:\n  WINDOWS_BINARIES: "{binaries}"\n', encoding="utf-8"
         )
@@ -183,7 +183,7 @@ class InputsTest(unittest.TestCase):
 
 class SafetyTest(unittest.TestCase):
     def test_default_upstream_ref_is_current_release_baseline(self):
-        self.assertEqual(ep.DEFAULT_UPSTREAM_REF, "rust-v0.164.0")
+        self.assertEqual(ep.DEFAULT_UPSTREAM_REF, "rust-v0.170.0")
 
     def test_upstream_version_handles_legacy_ep_and_epr(self):
         for version, expected in [
@@ -322,7 +322,12 @@ class ArtifactTest(unittest.TestCase):
         }
         entries["codex-path/rg.exe"] = b"rg"
         entries["codex-package.json"] = json.dumps(
-            {"version": self.state["version"], "target": ep.TARGET, "variant": "codex"}
+            {
+                "version": self.state["version"],
+                "target": ep.TARGET,
+                "variant": "codex",
+                "execServer": "bin/codex-exec-server.exe",
+            }
         ).encode()
         if omit:
             entries.pop(omit)
@@ -358,6 +363,10 @@ class ArtifactTest(unittest.TestCase):
             ep.check_archive(
                 self.archive(tarfile.TarInfo("codex-path/rg.exe")), self.state
             )
+
+    def test_rejects_missing_exec_server(self):
+        with self.assertRaisesRegex(RuntimeError, "missing required package entries"):
+            ep.check_archive(self.archive(omit="bin/codex-exec-server.exe"), self.state)
 
     def test_rejects_missing_helper(self):
         with self.assertRaisesRegex(RuntimeError, "missing required"):

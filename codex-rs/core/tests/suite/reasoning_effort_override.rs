@@ -47,10 +47,6 @@ fn override_builder() -> TestCodexBuilder {
             model.supports_reasoning_effort_updates = true;
         })
         .with_config(|config| {
-            config
-                .features
-                .enable(Feature::ReasoningEffortOverride)
-                .expect("enable reasoning effort overrides");
             config.model_reasoning_effort = Some(ReasoningEffort::Medium);
         })
 }
@@ -522,6 +518,7 @@ async fn reasoning_effort_override_recovery_sends_latest_tail_update(
                     ..Default::default()
                 },
                 trace: None,
+                prompt_cache_ttl: None,
                 cyber_access_program: None,
             })
             .await?,

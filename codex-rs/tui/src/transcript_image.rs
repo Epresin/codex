@@ -1,8 +1,10 @@
-//! Bounded image previews for the owned fullscreen transcript.
+//! Bounded local image previews for the transcript and composer.
 //!
 //! Only decoded local image pixels reach the terminal encoders. Previews are never source text;
 //! their reserved rows belong to layout. The terminal retains visible placements and any local
 //! transport files until those placements change.
+
+pub(crate) mod composer;
 
 use std::io::Write;
 use std::path::Path;
@@ -11,7 +13,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use codex_terminal_detection::TerminalName;
 use codex_terminal_detection::terminal_info;
-use crossterm::cursor::MoveTo;
 use crossterm::cursor::RestorePosition;
 use crossterm::cursor::SavePosition;
 use crossterm::queue;
@@ -21,6 +22,7 @@ use image::RgbaImage;
 use ratatui::layout::Rect;
 
 use crate::pets::ImageProtocol;
+use crate::pets::KittyPlacement;
 
 // Separate from the two image ids reserved for pets (0xC0DE and 0xC0DF).
 pub(crate) const FIRST_IMAGE_ID: u32 = 0xC100;
@@ -30,6 +32,18 @@ pub(crate) struct ImagePlacement {
     pub(crate) area: Rect,
     pub(crate) first_row: usize,
     pub(crate) file: Option<tempfile::NamedTempFile>,
+}
+
+impl ImagePlacement {
+    /// Register the same pixels for another frame. The terminal owns the transport file.
+    pub(crate) fn registration(&self) -> Self {
+        Self {
+            image: Arc::clone(&self.image),
+            area: self.area,
+            first_row: self.first_row,
+            file: None,
+        }
+    }
 }
 
 impl PartialEq for ImagePlacement {
@@ -49,13 +63,24 @@ pub(crate) struct TranscriptImage {
     pub(crate) cell_height: u32,
 }
 
-pub(crate) fn terminal_cell_size() -> Option<(u32, u32)> {
+pub(crate) fn sixel_terminal_cell_size() -> Option<(u32, u32)> {
+    sixel_cell_size_for_terminal(terminal_info().name, terminal_cell_size)
+}
+
+fn sixel_cell_size_for_terminal(
+    terminal: TerminalName,
+    query: impl FnOnce() -> Option<(u32, u32)>,
+) -> Option<(u32, u32)> {
     // Windows Terminal uses a fixed virtual Sixel grid, independent of font zoom.
     // Match the terminal rather than the OS so this also applies inside WSL.
-    if matches!(terminal_info().name, TerminalName::WindowsTerminal) {
-        return Some((10, 20));
+    if matches!(terminal, TerminalName::WindowsTerminal) {
+        Some((10, 20))
+    } else {
+        query()
     }
+}
 
+fn terminal_cell_size() -> Option<(u32, u32)> {
     crossterm::terminal::window_size()
         .ok()
         .filter(|size| size.columns > 0 && size.rows > 0 && size.width > 0 && size.height > 0)
@@ -68,21 +93,12 @@ pub(crate) fn terminal_cell_size() -> Option<(u32, u32)> {
 }
 
 impl TranscriptImage {
-    pub(crate) fn load(path: &Path, width: u16, protocol: ImageProtocol) -> Option<Self> {
-        let columns = width.saturating_sub(2).min(48);
+    fn load_pixels(path: &Path, max_width: u32, max_height: u32) -> Option<RgbaImage> {
         let metadata = path.metadata().ok()?;
-        // Bound encoded input as well as the raster: metadata alone can dwarf a tiny image.
-        if columns == 0 || !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
+        if max_width == 0 || !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
             return None;
         }
-        // Sixel uses terminal-defined pixel coordinates rather than a Kitty cell rectangle.
-        // Guessing the cell size could paint beyond the reserved rows and cover the composer.
-        let (cell_width, cell_height) = match protocol {
-            ImageProtocol::Sixel => terminal_cell_size()?,
-            // Kitty scales to cell coordinates itself. Use a stable, typical cell aspect ratio.
-            ImageProtocol::Kitty | ImageProtocol::KittyLocalFile => (8, 16),
-        };
-        let mut reader = image::ImageReader::open(path)
+        let reader = image::ImageReader::open(path)
             .ok()?
             .with_guessed_format()
             .ok()?;
@@ -90,22 +106,32 @@ impl TranscriptImage {
         // screenshots usable, but never allocate hundreds of MB for an optional thumbnail.
         let mut limits = image::Limits::default();
         limits.max_alloc = Some(32 * 1024 * 1024);
-        reader.limits(limits);
-        let image = reader.decode().ok()?;
+        let image = crate::image_decode::decode_oriented(reader, limits).ok()?;
+        Some(
+            image
+                .thumbnail(max_width.min(image.width()), max_height.min(image.height()))
+                .to_rgba8(),
+        )
+    }
+
+    pub(crate) fn load(path: &Path, width: u16, protocol: ImageProtocol) -> Option<Self> {
+        let columns = width.saturating_sub(2).min(48);
+        // Sixel paints physical pixels. Guessing could paint outside the reserved rows.
+        let (cell_width, cell_height) = match protocol {
+            ImageProtocol::Sixel => sixel_terminal_cell_size()?,
+            ImageProtocol::Kitty | ImageProtocol::KittyLocalFile => (8, 16),
+        };
         // The sprite encoder scans each active color per Sixel band. Bound both its CPU
         // work and worst-case output even with large terminal cells or high-entropy images.
         let (max_width, max_height) = match protocol {
             ImageProtocol::Sixel => (160, 80),
             ImageProtocol::Kitty | ImageProtocol::KittyLocalFile => (384, 160),
         };
-        let pixels = image
-            .thumbnail(
-                (u32::from(columns) * cell_width)
-                    .min(image.width())
-                    .min(max_width),
-                (6 * cell_height).min(image.height()).min(max_height),
-            )
-            .to_rgba8();
+        let pixels = Self::load_pixels(
+            path,
+            (u32::from(columns) * cell_width).min(max_width),
+            (6 * cell_height).min(max_height),
+        )?;
         Some(Self {
             protocol,
             columns: pixels.width().div_ceil(cell_width) as u16,
@@ -122,7 +148,7 @@ impl TranscriptImage {
         writer: &mut impl Write,
         area: Rect,
         first_row: usize,
-        id: u32,
+        placement: KittyPlacement,
     ) -> Result<Option<tempfile::NamedTempFile>> {
         let (top, bottom) = match self.protocol {
             ImageProtocol::Sixel => (
@@ -157,7 +183,7 @@ impl TranscriptImage {
                     } else {
                         crate::pets::kitty_transmit_png_with_id
                     };
-                    let command = transmit(png.path(), self.columns, area.height, Some(id))?;
+                    let command = transmit(png.path(), self.columns, area.height, placement)?;
                     file = (self.protocol == ImageProtocol::KittyLocalFile).then_some(png);
                     command.into_bytes()
                 }
@@ -169,9 +195,36 @@ impl TranscriptImage {
         let Ok(payload) = payload else {
             return Ok(None);
         };
-        queue!(writer, SavePosition, MoveTo(area.x, area.y))?;
-        writer.write_all(&payload)?;
+        queue!(writer, SavePosition)?;
+        placement.draw(writer, area, &payload)?;
         queue!(writer, RestorePosition)?;
         Ok(file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TerminalName;
+    use super::sixel_cell_size_for_terminal;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn windows_terminal_sixel_uses_virtual_cells_without_querying_pixels() {
+        let size = sixel_cell_size_for_terminal(TerminalName::WindowsTerminal, || {
+            panic!("Windows Terminal must not use viewport pixels for Sixel");
+        });
+        assert_eq!(size, Some((10, 20)));
+    }
+
+    #[test]
+    fn other_sixel_terminals_require_measured_cells() {
+        assert_eq!(
+            sixel_cell_size_for_terminal(TerminalName::Unknown, || Some((9, 18))),
+            Some((9, 18))
+        );
+        assert_eq!(
+            sixel_cell_size_for_terminal(TerminalName::Unknown, || None),
+            None
+        );
     }
 }

@@ -1,8 +1,8 @@
 # API-key and custom-base-URL compatibility
 
 This is an independent fork of the official OpenAI Codex CLI, based on
-`rust-v0.164.0` (`6aaac694803004a63c6f393d153c96d22521a6b9`).
-The current EPR source version is `0.164.0-epr.4`.
+`rust-v0.170.0` (`29eb79e9866b3262a777fdf8195c1b9e63684c91`).
+The current EPR source version is `0.170.0-epr.1`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,20 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Upstream 0.170.0 (0.170.0-epr.1)
+
+- Keep Max and Ultra in the main reasoning picker with upstream thread/provider
+  scoping. Remove Max/Ultra usage copy, not Ultra concurrency checks or guards.
+- Show the selected model's advertised speed tier in `model-with-reasoning`
+  without requiring a ChatGPT account, using the upstream lowercase footer.
+  The terminal title retains the previous account requirement for this suffix.
+- Keep the new upstream draft thumbnail strip and transcript orientation/cropping
+  while using the fixed Windows Terminal Sixel cell size (including WSL).
+- Keep EP release routing on both platforms and package the new upstream
+  `codex-exec-server` helper, built from the same source as the CLI.
+- Use the upstream-pinned Rust 1.95.0 and V8 152.2.0, with official state
+  migrations unchanged and new builds for both platforms.
 
 ## EPR 4 direct Max and Ultra selection
 

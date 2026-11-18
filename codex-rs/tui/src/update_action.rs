@@ -65,6 +65,28 @@ mod tests {
         );
         assert!(get_update_action().is_some());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn standalone_unix_update_fails_when_installer_download_fails() {
+        let (command, args) = UpdateAction::StandaloneUnix.command_args();
+        let offline_command = args[1]
+            .replace(release::UNIX_INSTALLER_URL, "file:///dev/null/installer")
+            .replace(
+                release::UNIX_INSTALLER_FALLBACK_URL,
+                "file:///dev/null/installer",
+            );
+        assert_ne!(offline_command, args[1], "installer URL must be replaced");
+        let output = std::process::Command::new(command)
+            .args([args[0], &offline_command])
+            .env_clear()
+            .env("HOME", "/dev/null")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("run standalone Unix update command");
+
+        assert!(!output.status.success(), "{output:?}");
+    }
 }
 
 /// Package source explicitly selected by the user in the daemon menu.

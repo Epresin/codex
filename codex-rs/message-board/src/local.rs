@@ -6,23 +6,24 @@
 //! a board after its root has been permanently deleted.
 //! Opening storage adds optional channel metadata without invalidating older readers.
 //! Explicit connections can restrict writes; default handles retain legacy access.
+//! Fixed read views freeze the channel catalog and restrict reads to a captured post sequence.
+//! Posting subscribes and notifies; host appends share persistence without these side effects.
 
 use self::connection::Access;
 use self::options::LocalBoardOptions;
+use crate::AppendRequest;
 use crate::ChannelDescription;
-use crate::ChannelPermissions;
 use crate::ChannelSummary;
 use crate::CreateChannelRequest;
 use crate::MessageBoardHost;
-use crate::PostContent;
 use crate::PostDestination;
 use crate::PostMetadata;
 use crate::PostRequest;
-use crate::ReadPostRequest;
 use crate::SubscriptionChange;
 use crate::SubscriptionRequest;
 use crate::SubscriptionState;
 use crate::SubscriptionTarget;
+use crate::api::PostBehavior;
 use caseless::default_case_fold_str;
 use chrono::DateTime;
 use chrono::Utc;
@@ -42,13 +43,16 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use uuid::Uuid;
 
+mod catalog;
 pub(crate) mod connection;
+mod json_search;
 mod lifecycle;
 pub(crate) mod options;
 mod paging;
 mod pool;
 mod queries;
 pub(crate) mod setup;
+mod subscriptions;
 
 #[cfg(test)]
 #[path = "local/pools_tests.rs"]
@@ -58,12 +62,39 @@ const MAX_POST_BYTES: usize = 64 * 1024;
 const MAX_CHANNEL_BYTES: usize = 128;
 const MAX_READ_CHARS: usize = 20_000;
 
+/// Capturing a view makes the handle read-only, regardless of its original access.
+#[derive(Clone)]
+enum BoardMode {
+    Live { access: Option<Access> },
+    Fixed { view: Arc<catalog::ReadView> },
+}
+
+impl BoardMode {
+    const FIXED_ACCESS: Access = Access::ReadOnly;
+
+    fn access(&self) -> Option<Access> {
+        match self {
+            Self::Live { access } => *access,
+            Self::Fixed { .. } => Some(Self::FIXED_ACCESS),
+        }
+    }
+
+    fn view(&self) -> Option<&catalog::ReadView> {
+        match self {
+            Self::Live { .. } => None,
+            Self::Fixed { view } => Some(view),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LocalAgentMessageBoard {
     identity: SessionId,
+    storage_namespace: Arc<str>,
     pool: Arc<SqlitePool>,
     host: Arc<dyn MessageBoardHost>,
-    access: Option<Access>,
+    mode: BoardMode,
+    nested_json_pointer: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,8 +116,10 @@ impl LocalAgentMessageBoard {
         Ok(Self {
             identity,
             pool: pool::open(sqlite, options).await?,
+            storage_namespace: Arc::from(options.storage_namespace.as_str()),
             host,
-            access: None,
+            mode: BoardMode::Live { access: None },
+            nested_json_pointer: None,
         })
     }
 
@@ -95,7 +128,7 @@ impl LocalAgentMessageBoard {
         caller: ThreadId,
         request: CreateChannelRequest,
     ) -> Result<ChannelSummary> {
-        if let Some(access) = self.access {
+        if let Some(access) = self.mode.access() {
             access.require_write(self.identity, "board.create_channel")?;
         }
         validate_channel(&request.channel_name)?;
@@ -119,7 +152,7 @@ impl LocalAgentMessageBoard {
             )
             .await?;
         }
-        let summary = self.channel_summary(&mut tx, &request.channel_name).await?;
+        let summary = catalog::channel_summary(self, &mut tx, &request.channel_name).await?;
         tx.commit().await.map_err(storage_error)?;
         Ok(summary)
     }
@@ -129,7 +162,33 @@ impl LocalAgentMessageBoard {
     /// into a recipient's later turn. Once committed, notification failures are
     /// logged without failing the post; the persisted content remains readable.
     pub async fn post(&self, caller: ThreadId, request: PostRequest) -> Result<PostMetadata> {
-        if let Some(access) = self.access {
+        self.write(caller, request, PostBehavior::Discussion).await
+    }
+
+    /// Appends evidence without automatic subscriptions or notifications, even on a discussion board.
+    /// Uses the same access checks, caller-scoped request IDs and durable write path as posting.
+    /// Reusing a request ID for a different payload or operation is an error.
+    pub async fn append(&self, caller: ThreadId, request: AppendRequest) -> Result<PostMetadata> {
+        self.write(
+            caller,
+            PostRequest {
+                request_id: request.request_id,
+                destination: request.destination,
+                text: request.text,
+                agents_to_notify: Vec::new(),
+            },
+            PostBehavior::SilentAppend,
+        )
+        .await
+    }
+
+    async fn write(
+        &self,
+        caller: ThreadId,
+        request: PostRequest,
+        behavior: PostBehavior,
+    ) -> Result<PostMetadata> {
+        if let Some(access) = self.mode.access() {
             access.require_write(
                 self.identity,
                 match &request.destination {
@@ -139,12 +198,17 @@ impl LocalAgentMessageBoard {
             )?;
         }
         let board = self.clone();
-        tokio::spawn(async move { board.post_inner(caller, request).await })
+        tokio::spawn(async move { board.post_inner(caller, request, behavior).await })
             .await
             .map_err(storage_error)?
     }
 
-    async fn post_inner(&self, caller: ThreadId, request: PostRequest) -> Result<PostMetadata> {
+    async fn post_inner(
+        &self,
+        caller: ThreadId,
+        request: PostRequest,
+        behavior: PostBehavior,
+    ) -> Result<PostMetadata> {
         if request.text.len() > MAX_POST_BYTES
             || request.text.is_empty()
             || request.request_id.is_empty()
@@ -157,7 +221,12 @@ impl LocalAgentMessageBoard {
         }
         let author = self.host.agent_path(caller).await?;
         let request_id = format!("{caller}:{}", request.request_id);
-        let request_json = serde_json::to_string(&request).map_err(storage_error)?;
+        let request_json = match behavior {
+            // Keep existing post fingerprints compatible with persisted retries.
+            PostBehavior::Discussion => serde_json::to_string(&request),
+            PostBehavior::SilentAppend => serde_json::to_string(&("append", &request)),
+        }
+        .map_err(storage_error)?;
         let mut conn = self.pool.acquire().await.map_err(storage_error)?;
         if let Some(post) = self
             .existing_post(&mut conn, &request_id, &request_json)
@@ -167,8 +236,10 @@ impl LocalAgentMessageBoard {
         }
         drop(conn);
         let mut recipients = HashSet::new();
-        for path in &request.agents_to_notify {
-            recipients.insert(self.host.resolve_agent(path.clone()).await?);
+        if let PostBehavior::Discussion = behavior {
+            for path in &request.agents_to_notify {
+                recipients.insert(self.host.resolve_agent(path.clone()).await?);
+            }
         }
         let now = self.host.current_time(caller).await?;
         let mut tx = self.begin_write().await?;
@@ -209,12 +280,14 @@ impl LocalAgentMessageBoard {
                     now,
                 )
                 .await?;
-                self.subscribe(
-                    &mut tx,
-                    &SubscriptionTarget::Channel(channel.clone()),
-                    caller,
-                )
-                .await?;
+                if let PostBehavior::Discussion = behavior {
+                    self.subscribe(
+                        &mut tx,
+                        &SubscriptionTarget::Channel(channel.clone()),
+                        caller,
+                    )
+                    .await?;
+                }
                 (
                     channel.clone(),
                     id,
@@ -235,17 +308,20 @@ impl LocalAgentMessageBoard {
         };
         // Return one JSON array to avoid handing each subscriber row across
         // SQLite's worker thread while the write transaction is held.
-        let subscribed = sqlx::query_scalar::<_, String>(
-            "SELECT json_group_array(agent) FROM subscriptions WHERE board=? AND target=?",
-        )
-        .bind(self.identity.to_string())
-        .bind(target_key(&target)?)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(storage_error)?;
-        let subscribed: Vec<String> = serde_json::from_str(&subscribed).map_err(storage_error)?;
-        for recipient in subscribed {
-            recipients.insert(ThreadId::from_string(&recipient).map_err(storage_error)?);
+        if let PostBehavior::Discussion = behavior {
+            let subscribed = sqlx::query_scalar::<_, String>(
+                "SELECT json_group_array(agent) FROM subscriptions WHERE board=? AND target=?",
+            )
+            .bind(self.identity.to_string())
+            .bind(target_key(&target)?)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(storage_error)?;
+            let subscribed: Vec<String> =
+                serde_json::from_str(&subscribed).map_err(storage_error)?;
+            for recipient in subscribed {
+                recipients.insert(ThreadId::from_string(&recipient).map_err(storage_error)?);
+            }
         }
         recipients.remove(&caller);
         let post = StoredPost {
@@ -264,10 +340,15 @@ impl LocalAgentMessageBoard {
             .bind(serde_json::to_string(&post).map_err(storage_error)?).bind(request_id).bind(request_json)
             .execute(&mut *tx).await.map_err(storage_error)?;
         // Participation subscribes by default, without overriding an explicit opt-out.
-        self.subscribe(&mut tx, &SubscriptionTarget::Thread(root), caller)
-            .await?;
+        if let PostBehavior::Discussion = behavior {
+            self.subscribe(&mut tx, &SubscriptionTarget::Thread(root), caller)
+                .await?;
+        }
         tx.commit().await.map_err(storage_error)?;
 
+        if let PostBehavior::SilentAppend = behavior {
+            return Ok(post.metadata);
+        }
         // A committed post succeeds even if a best-effort notice cannot be delivered.
         let notice = paging::preview(post.clone(), /*max_chars*/ 150);
         futures::stream::iter(recipients)
@@ -292,15 +373,25 @@ impl LocalAgentMessageBoard {
         let target_path = request.target_agent.unwrap_or(caller_path);
         let target_agent = self.host.resolve_agent(target_path.clone()).await?;
         if target_agent != caller
-            && let Some(access) = self.access
+            && let Some(access) = self.mode.access()
         {
             access.require_write(self.identity, "board.manage_subscriptions")?;
         }
         let mut tx = self.begin_write().await?;
         let (channel, root, last) = match &request.target {
             SubscriptionTarget::Channel(name) => {
-                let summary = self.channel_summary(&mut tx, name).await?;
-                (name.clone(), None, summary.last_message_id)
+                let last: Option<String> = sqlx::query_scalar(
+                    "SELECT (SELECT p.id FROM posts p WHERE p.board=c.board AND p.channel=c.name
+                             ORDER BY p.timestamp DESC,p.seq DESC LIMIT 1)
+                     FROM channels c WHERE c.board=? AND c.name=?",
+                )
+                .bind(self.identity.to_string())
+                .bind(name)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(storage_error)?
+                .ok_or_else(|| invalid("channel not found in this board"))?;
+                (name.clone(), None, last)
             }
             SubscriptionTarget::Thread(root) => {
                 let post = self.load_post(&mut tx, *root).await?;
@@ -309,67 +400,23 @@ impl LocalAgentMessageBoard {
                 }
                 let last: String = sqlx::query_scalar("SELECT id FROM posts WHERE board=? AND root=? ORDER BY timestamp DESC, seq DESC LIMIT 1")
                     .bind(self.identity.to_string()).bind(root.to_string()).fetch_one(&mut *tx).await.map_err(storage_error)?;
-                (
-                    post.metadata.channel_name,
-                    Some(*root),
-                    Some(Uuid::parse_str(&last).map_err(storage_error)?),
-                )
+                (post.metadata.channel_name, Some(*root), Some(last))
             }
         };
-        let enabled = request.change == SubscriptionChange::Subscribe;
-        // Keep active subscriptions readable by older binaries. Opt-outs only
-        // prevent implicit subscription when this agent participates again.
-        let statements = match request.change {
-            SubscriptionChange::Subscribe => [
-                "DELETE FROM subscription_opt_outs WHERE board=? AND target=? AND agent=?",
-                "INSERT OR IGNORE INTO subscriptions(board,target,agent) VALUES(?,?,?)",
-            ],
-            SubscriptionChange::Unsubscribe => [
-                "DELETE FROM subscriptions WHERE board=? AND target=? AND agent=?",
-                "INSERT OR IGNORE INTO subscription_opt_outs(board,target,agent) VALUES(?,?,?)",
-            ],
-        };
-        for statement in statements {
-            sqlx::query(statement)
-                .bind(self.identity.to_string())
-                .bind(target_key(&request.target)?)
-                .bind(target_agent.to_string())
-                .execute(&mut *tx)
-                .await
-                .map_err(storage_error)?;
-        }
+        let last_message_id = last
+            .as_deref()
+            .map(Uuid::parse_str)
+            .transpose()
+            .map_err(storage_error)?;
+        self.change_subscription(&mut tx, &request.target, target_agent, request.change)
+            .await?;
         tx.commit().await.map_err(storage_error)?;
         Ok(SubscriptionState {
             channel_name: channel,
             thread_id: root,
             target_agent: target_path,
-            enabled,
-            last_message_id: last,
-        })
-    }
-
-    pub async fn read_post(
-        &self,
-        caller: ThreadId,
-        request: ReadPostRequest,
-    ) -> Result<PostContent> {
-        self.host.agent_path(caller).await?;
-        let mut conn = self.pool.acquire().await.map_err(storage_error)?;
-        let post = self.load_post(&mut conn, request.message_id).await?;
-        let n_chars = post.text.chars().count();
-        let offset = (request.offset_chars as usize).min(n_chars);
-        let text: String = post
-            .text
-            .chars()
-            .skip(offset)
-            .take((request.limit_chars.get() as usize).min(MAX_READ_CHARS))
-            .collect();
-        let next_offset_chars = offset + text.chars().count();
-        Ok(PostContent {
-            metadata: post.metadata,
-            text,
-            n_chars,
-            next_offset_chars,
+            enabled: request.change == SubscriptionChange::Subscribe,
+            last_message_id,
         })
     }
 
@@ -387,18 +434,6 @@ impl LocalAgentMessageBoard {
             .await
             .map_err(storage_error)?;
         Ok(())
-    }
-
-    async fn load_post(&self, conn: &mut SqliteConnection, id: Uuid) -> Result<StoredPost> {
-        let payload: Option<String> =
-            sqlx::query_scalar("SELECT payload FROM posts WHERE board=? AND id=?")
-                .bind(self.identity.to_string())
-                .bind(id.to_string())
-                .fetch_optional(conn)
-                .await
-                .map_err(storage_error)?;
-        serde_json::from_str(&payload.ok_or_else(|| invalid("post not found in this board"))?)
-            .map_err(storage_error)
     }
 
     async fn existing_post(
@@ -420,48 +455,6 @@ impl LocalAgentMessageBoard {
             serde_json::from_str(row.get("payload")).map_err(storage_error)
         })
         .transpose()
-    }
-
-    async fn channel_summary(
-        &self,
-        conn: &mut SqliteConnection,
-        name: &str,
-    ) -> Result<ChannelSummary> {
-        let row = sqlx::query(
-            "SELECT c.created_at,c.author,c.description,
-             (SELECT COUNT(*) FROM posts p WHERE p.board=c.board AND p.channel=c.name) AS message_count,
-             (SELECT p.id FROM posts p WHERE p.board=c.board AND p.channel=c.name ORDER BY p.timestamp DESC,p.seq DESC LIMIT 1) AS last_message_id
-             FROM channels c WHERE c.board=? AND c.name=?",
-        )
-        .bind(self.identity.to_string())
-        .bind(name)
-        .fetch_optional(conn)
-        .await
-        .map_err(storage_error)?
-        .ok_or_else(|| invalid("channel not found in this board"))?;
-        Ok(ChannelSummary {
-            permissions: self.access.map(|access| {
-                let write = matches!(access, Access::ReadWrite);
-                ChannelPermissions {
-                    read: true,
-                    post: write,
-                    reply: write,
-                    edit_metadata: false,
-                }
-            }),
-            channel_name: name.to_string(),
-            description: row.get("description"),
-            created_at: DateTime::parse_from_rfc3339(row.get("created_at"))
-                .map_err(storage_error)?
-                .with_timezone(&Utc),
-            created_by: AgentPath::try_from(row.get::<String, _>("author")).map_err(invalid)?,
-            message_count: row.get::<i64, _>("message_count") as usize,
-            last_message_id: row
-                .get::<Option<String>, _>("last_message_id")
-                .map(|id| Uuid::parse_str(&id))
-                .transpose()
-                .map_err(storage_error)?,
-        })
     }
 }
 

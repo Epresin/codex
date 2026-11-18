@@ -2,6 +2,7 @@
 //! Account and delivered-policy changes cancel the same owner and its admitted requests.
 //! Credential selection and recovery belong to each connection's token source.
 
+use crate::McpServerKey;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -21,6 +22,7 @@ use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_rmcp_client::EmaAuthFailure;
 use codex_rmcp_client::EmaAuthenticatedHttpClient;
+use codex_rmcp_client::EmaErrorDetail;
 use codex_rmcp_client::EmaRequestAuthority;
 use codex_rmcp_client::McpOAuthRefreshMode;
 use codex_rmcp_client::McpProtocolMode;
@@ -124,7 +126,14 @@ impl EmaAuth {
 
     pub(crate) async fn check_account(&self) -> Result<()> {
         self.authority.check()?;
-        if !self.manager.account_login_is_current(&self.account).await? {
+        if !self
+            .manager
+            .account_login_is_current(&self.account)
+            .await
+            .context(EmaErrorDetail::new(
+                "enterprise MCP account credential validation failed",
+            ))?
+        {
             self.authority.revoke();
             bail!(codex_rmcp_client::EmaTokenSourceError::new(
                 codex_rmcp_client::EmaCredentialKind::Account,
@@ -138,7 +147,7 @@ impl EmaAuth {
     pub(crate) async fn connect(
         self: &Arc<Self>,
         authority: EmaRequestAuthority,
-        server_name: &str,
+        server_key: &McpServerKey,
         server: &EffectiveMcpServer,
         http_client: Arc<dyn HttpClient>,
         protocol_mode: McpProtocolMode,
@@ -152,7 +161,7 @@ impl EmaAuth {
             || !self
                 .config
                 .mcp_server_catalog
-                .server(server_name)
+                .server(server_key)
                 .is_some_and(|server| matches!(server.source(), McpServerSource::Config))
         {
             bail!("enterprise MCP requires an enabled, directly configured server");
@@ -177,7 +186,7 @@ impl EmaAuth {
             authority,
         ));
         RmcpClient::new_streamable_http_client_with_protocol_mode_and_redirect_mode(
-            server_name,
+            server_key.name(),
             &url,
             Some(StreamableHttpBearerToken::ProvidedByHttpClient),
             /*http_headers*/ None,
@@ -212,12 +221,16 @@ pub(crate) async fn stored_ema_credentials(
                     OAuthCredentialsStoreMode::Keyring,
                     keyring_backend,
                 )
-                .map_err(|_| anyhow!("failed to read enterprise credentials"))
+                .map_err(|_| anyhow!(EmaErrorDetail::new("failed to read enterprise credentials")))
             })
         })
     })
     .await
-    .map_err(|_| anyhow!("enterprise credential read task failed"))?
+    .map_err(|_| {
+        anyhow!(EmaErrorDetail::new(
+            "enterprise credential read task failed"
+        ))
+    })?
 }
 
 // Discovery and both credential exchanges must check the owner at each dispatch,

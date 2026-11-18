@@ -20,7 +20,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_UPSTREAM_REF = "rust-v0.164.0"
+DEFAULT_UPSTREAM_REF = "rust-v0.170.0"
 TARGET = "x86_64-pc-windows-msvc"
 FAMILIES = {
     "state_5.sqlite": "migrations",
@@ -33,6 +33,7 @@ FAMILIES = {
 PACKAGE_BINARIES = {
     "bin/codex.exe": "codex.exe",
     "bin/codex-code-mode-host.exe": "codex-code-mode-host.exe",
+    "bin/codex-exec-server.exe": "codex-exec-server.exe",
     "codex-resources/codex-command-runner.exe": "codex-command-runner.exe",
     "codex-resources/codex-windows-sandbox-setup.exe": "codex-windows-sandbox-setup.exe",
 }
@@ -607,7 +608,8 @@ def check_archive(path, state):
         require(
             manifest["version"] == state["version"]
             and manifest["target"] == TARGET
-            and manifest["variant"] == "codex",
+            and manifest["variant"] == "codex"
+            and manifest.get("execServer") == "bin/codex-exec-server.exe",
             "Package identity mismatch",
         )
 
@@ -649,6 +651,7 @@ def package(args):
     flags = {
         "--entrypoint-bin": "codex.exe",
         "--code-mode-host-bin": "codex-code-mode-host.exe",
+        "--exec-server-bin": "codex-exec-server.exe",
         "--codex-command-runner-bin": "codex-command-runner.exe",
         "--codex-windows-sandbox-setup-bin": "codex-windows-sandbox-setup.exe",
     }
