@@ -728,7 +728,9 @@ impl ChatWidget {
     pub(super) fn status_line_value_for_item(&mut self, item: StatusLineItem) -> Option<String> {
         match item {
             StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
-            StatusLineItem::ModelWithReasoning => Some(self.model_with_reasoning_display_name()),
+            StatusLineItem::ModelWithReasoning => {
+                Some(self.model_with_reasoning_display_name(/*show_service_tier*/ true))
+            }
             StatusLineItem::Reasoning => Some(self.reasoning_display_name()),
             StatusLineItem::CurrentDir => {
                 Some(format_directory_display(
@@ -976,7 +978,7 @@ impl ChatWidget {
                 /*max_chars*/ 32,
             )),
             TerminalTitleItem::ModelWithReasoning => Some(Self::truncate_terminal_title_part(
-                self.model_with_reasoning_display_name(),
+                self.model_with_reasoning_display_name(self.has_chatgpt_account),
                 /*max_chars*/ 32,
             )),
             TerminalTitleItem::Reasoning => Some(Self::truncate_terminal_title_part(
@@ -992,17 +994,17 @@ impl ChatWidget {
         Self::status_line_reasoning_effort_label(effort.as_ref())
     }
 
-    fn model_with_reasoning_display_name(&self) -> String {
+    fn model_with_reasoning_display_name(&self, show_service_tier: bool) -> String {
         let label = self.reasoning_display_name();
         let service_tier_label = self
             .current_service_tier()
+            .filter(|_| show_service_tier)
             .and_then(|service_tier| {
                 self.current_model_service_tier_commands()
                     .into_iter()
                     .find(|tier| tier.id == service_tier)
                     .map(|tier| tier.name)
             })
-            .filter(|_| self.has_chatgpt_account)
             .map(|tier| format!(" {tier}"))
             .unwrap_or_default();
         format!("{} {label}{service_tier_label}", self.model_display_name())

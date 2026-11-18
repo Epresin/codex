@@ -7,6 +7,7 @@ use crate::chatwidget::rate_limits::get_limits_duration;
 use crate::chatwidget::realtime::tests::activate_voice_for_thread;
 use codex_app_server_protocol::SpendControlLimitSnapshot;
 use codex_app_server_protocol::ThreadUsage;
+use codex_protocol::openai_models::ModelServiceTier;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -4122,6 +4123,38 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
         status_line_text(&chat),
         Some(format!("gpt-5.2 xhigh · Context 0% used · {test_cwd}"))
     );
+}
+
+#[tokio::test]
+async fn status_line_model_with_reasoning_shows_ultrafast_without_chatgpt_auth() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-6.2-sol")).await;
+    assert!(!chat.has_chatgpt_account());
+    set_fast_mode_test_catalog_for_models(&mut chat, "gpt-6.2-sol", "gpt-5.2");
+    let model = Arc::make_mut(&mut chat.model_catalog)
+        .models
+        .iter_mut()
+        .find(|model| model.model == "gpt-6.2-sol")
+        .expect("gateway model in catalog");
+    model.service_tiers.push(ModelServiceTier {
+        id: "ultrafast".into(),
+        name: "Ultrafast".into(),
+        description: "ultrafast mode".into(),
+    });
+    chat.local_settings.tui.status_line = Some(vec!["model-with-reasoning".into()]);
+    chat.local_settings.tui.terminal_title = Some(vec!["model-with-reasoning".into()]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Max));
+
+    assert_eq!(status_line_text(&chat).as_deref(), Some("gpt-6.2-sol max"));
+
+    chat.set_service_tier(Some("ultrafast".into()));
+    assert_eq!(
+        status_line_text(&chat).as_deref(),
+        Some("gpt-6.2-sol max ultrafast")
+    );
+    assert_eq!(chat.last_terminal_title.as_deref(), Some("gpt-6.2-sol max"));
+
+    chat.set_model("gpt-5.2");
+    assert_eq!(status_line_text(&chat).as_deref(), Some("gpt-5.2 max"));
 }
 
 #[tokio::test]
