@@ -183,7 +183,7 @@ class InputsTest(unittest.TestCase):
 
 class SafetyTest(unittest.TestCase):
     def test_default_upstream_ref_is_current_release_baseline(self):
-        self.assertEqual(ep.DEFAULT_UPSTREAM_REF, "rust-v0.170.0")
+        self.assertEqual(ep.DEFAULT_UPSTREAM_REF, "rust-v0.171.0")
 
     def test_upstream_version_handles_legacy_ep_and_epr(self):
         for version, expected in [

@@ -130,6 +130,7 @@ impl ComposerImages {
                     area: tile,
                     first_row: 0,
                     file: None,
+                    terminal_id: None,
                 });
             } else {
                 Paragraph::new(attachment.placeholder.as_str())

@@ -20,7 +20,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_UPSTREAM_REF = "rust-v0.170.0"
+DEFAULT_UPSTREAM_REF = "rust-v0.171.0"
 TARGET = "x86_64-pc-windows-msvc"
 FAMILIES = {
     "state_5.sqlite": "migrations",

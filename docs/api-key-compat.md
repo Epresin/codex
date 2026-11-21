@@ -1,8 +1,8 @@
 # API-key and custom-base-URL compatibility
 
 This is an independent fork of the official OpenAI Codex CLI, based on
-`rust-v0.170.0` (`29eb79e9866b3262a777fdf8195c1b9e63684c91`).
-The current EPR source version is `0.170.0-epr.1`.
+`rust-v0.171.0` (`ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`).
+The current EPR source version is `0.171.0-epr.1`.
 It is not a client for a specific gateway. No gateway server, deployment
 configuration, credentials, or private acceptance sessions are included.
 The upstream Apache-2.0 license and NOTICE are preserved.
@@ -57,6 +57,23 @@ Authenticate with the API key issued by that endpoint, using the upstream
 API-key sign-in flow. A ChatGPT login and a custom key header are not required
 for these patches. See the upstream documentation for normal CLI setup,
 credentials storage, and build instructions.
+
+## Upstream 0.171.0 (0.171.0-epr.1)
+
+- Merge official `rust-v0.171.0`, including default-on TUI workspace with
+  sidebar document/image/subagent previews, composer undo/redo, `/rc` remote
+  control, and `codex exec --remote`.
+- Retain Windows Terminal's fixed `10x20` Sixel cell size across both the
+  updated `TranscriptImage::load` (`PreviewKind::Inspected` / `Generated`) and
+  the new workspace `SidebarImage` preview, while restoring `terminal_cell_size`
+  visibility for Kitty paths.
+- Keep unlimited subagent model catalog listings, API-key/custom-base-URL
+  compatibility, HTTP/SSE default transport, WSL clipboard image paste,
+  MultiAgentV2 default with explicit V1 opt-out, compact `context-window`
+  footer, and non-ChatGPT speed tier footer display.
+- Use the upstream-pinned Rust 1.99.1 toolchain and align all workspace
+  member versions in `codex-rs/Cargo.lock` (including newly added
+  `codex-user-input`).
 
 ## Upstream 0.170.0 (0.170.0-epr.1)
 
