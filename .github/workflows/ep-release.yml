@@ -1,0 +1,454 @@
+name: ep-release
+
+on:
+  push:
+    tags:
+      - "rust-v*-epr.*"
+  workflow_dispatch:
+
+concurrency:
+  group: ep-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate version and scripts
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit: ${{ steps.meta.outputs.commit }}
+      rust_channel: ${{ steps.meta.outputs.rust_channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate version, Cargo.lock, and toolchain
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib, re, sys, tomllib
+
+          ws_root = pathlib.Path("codex-rs")
+          ws_toml = tomllib.loads((ws_root / "Cargo.toml").read_text(encoding="utf-8"))
+          version = ws_toml["workspace"]["package"]["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+-epr\.[1-9]\d*", version):
+              sys.exit(f"Invalid EP version in codex-rs/Cargo.toml: {version!r}")
+
+          expected_tag = f"rust-v{version}"
+          if os.environ.get("GITHUB_REF_TYPE") == "tag":
+              actual_tag = os.environ.get("GITHUB_REF_NAME", "")
+              if actual_tag != expected_tag:
+                  sys.exit(f"Tag {actual_tag!r} does not match Cargo.toml version {version!r}")
+
+          # Ensure every workspace crate inheriting workspace.version is aligned in Cargo.lock.
+          inherited = set()
+          for member in ws_toml["workspace"]["members"]:
+              pkg = tomllib.loads((ws_root / member / "Cargo.toml").read_text(encoding="utf-8")).get("package", {})
+              ver = pkg.get("version")
+              if isinstance(ver, dict) and ver.get("workspace") is True:
+                  inherited.add(pkg["name"])
+
+          lock_text = (ws_root / "Cargo.lock").read_text(encoding="utf-8")
+          found = {}
+          for blk in lock_text.split("\n[[package]]\n")[1:]:
+              m_name = re.search(r'(?m)^name = "([^"]+)"$', blk)
+              m_ver = re.search(r'(?m)^version = "([^"]+)"$', blk)
+              has_source = re.search(r"(?m)^source = ", blk) is not None
+              if m_name and m_ver and not has_source and m_name.group(1) in inherited:
+                  found[m_name.group(1)] = m_ver.group(1)
+
+          mismatched = {k: v for k, v in found.items() if v != version}
+          missing = sorted(inherited - set(found))
+          if mismatched or missing:
+              sys.exit(f"Cargo.lock mismatch: missing={missing}, mismatched={mismatched}")
+
+          toolchain = tomllib.loads((ws_root / "rust-toolchain.toml").read_text(encoding="utf-8"))
+          rust_channel = toolchain["toolchain"]["channel"]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"version={version}\n")
+              fh.write(f"tag={expected_tag}\n")
+              fh.write(f"commit={os.environ['GITHUB_SHA']}\n")
+              fh.write(f"rust_channel={rust_channel}\n")
+
+          print(f"Validated EP release: version={version}, tag={expected_tag}, rust={rust_channel}, crates={len(found)}")
+          PY
+
+      - name: Run release and installer Python tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s scripts -p 'test_ep_release_version.py' -v
+          python3 -m unittest discover -s scripts/install -p 'test_install_*.py' -v
+
+  build-linux:
+    name: Build Linux (x86_64-unknown-linux-musl)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET: x86_64-unknown-linux-musl
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_PROFILE_RELEASE_DEBUG: "none"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
+      AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+      AWS_LC_SYS_NO_JITTER_ENTROPY_x86_64_unknown_linux_musl: "1"
+      CODEX_MUSL_RELEASE_LINK_FLAGS: "1"
+    steps:
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.validate.outputs.rust_channel }}
+          targets: x86_64-unknown-linux-musl
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ep-cargo-linux-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: |
+            ep-cargo-linux-
+
+      - name: Install zstd and binutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends zstd binutils
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - name: Install musl build tools
+        shell: bash
+        working-directory: codex-rs
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - name: Configure rusty_v8
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: x86_64-unknown-linux-musl
+
+      - name: Build bwrap and export digest
+        shell: bash
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo build --target "${TARGET}" --release --locked --bin bwrap
+          bwrap_path="target/${TARGET}/release/bwrap"
+          strip --strip-debug --strip-unneeded "$bwrap_path"
+          digest="$(sha256sum "$bwrap_path" | awk '{print $1}')"
+          echo "CODEX_BWRAP_SHA256=${digest}" >> "$GITHUB_ENV"
+
+      - name: Build Linux release binaries
+        shell: bash
+        working-directory: codex-rs
+        env:
+          STABLE_GIT_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          cargo build --target "${TARGET}" --release --locked \
+            --bin codex \
+            --bin codex-code-mode-host \
+            --bin codex-exec-server
+
+      - name: Smoke-test Linux binary version
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(codex-rs/target/${TARGET}/release/codex --version)"
+          echo "Built Linux binary: ${actual}"
+          [[ "${actual}" == "codex-cli ${EXPECTED_VERSION}" ]] || {
+            echo "Expected 'codex-cli ${EXPECTED_VERSION}', got '${actual}'" >&2
+            exit 1
+          }
+
+      - name: Package Linux archives
+        shell: bash
+        env:
+          CODEX_REPO_ROOT: ${{ github.workspace }}
+          PACKAGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          rel_dir="${GITHUB_WORKSPACE}/codex-rs/target/${TARGET}/release"
+          out_dir="${GITHUB_WORKSPACE}/dist/linux"
+          mkdir -p "${out_dir}"
+          python3 scripts/build_codex_package.py \
+            --target "${TARGET}" \
+            --variant codex \
+            --package-version "${PACKAGE_VERSION}" \
+            --cargo-profile release \
+            --strip all \
+            --entrypoint-bin "${rel_dir}/codex" \
+            --code-mode-host-bin "${rel_dir}/codex-code-mode-host" \
+            --exec-server-bin "${rel_dir}/codex-exec-server" \
+            --bwrap-bin "${rel_dir}/bwrap" \
+            --package-dir "${RUNNER_TEMP}/codex-package-${TARGET}" \
+            --archive-output "${out_dir}/codex-package-${TARGET}.tar.gz" \
+            --archive-output "${out_dir}/codex-package-${TARGET}.tar.zst" \
+            --force
+          ls -lh "${out_dir}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ep-package-linux
+          path: dist/linux/codex-package-x86_64-unknown-linux-musl.tar.*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (x86_64-pc-windows-msvc)
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_PROFILE_RELEASE_DEBUG: "none"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
+      LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
+    steps:
+      - name: Configure CRLF and long paths before checkout
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf true
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify CRLF SQL migration inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, sys
+          sql_files = sorted(pathlib.Path("codex-rs/state").rglob("*.sql"))
+          if not sql_files:
+              sys.exit("No SQL files found under codex-rs/state")
+          bad = []
+          for p in sql_files:
+              data = p.read_bytes()
+              if b"\n" in data and b"\n" in data.replace(b"\r\n", b""):
+                  bad.append(str(p))
+          if bad:
+              sys.exit(f"Non-CRLF SQL migrations detected: {bad[:5]}")
+          print(f"Verified {len(sql_files)} CRLF SQL migration files.")
+          PY
+
+      - name: Ensure python3 shim and zstd are available
+        shell: pwsh
+        run: |
+          $py = (Get-Command python).Source
+          $shimDir = Join-Path $env:RUNNER_TEMP "shims"
+          New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+          if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
+            Copy-Item $py (Join-Path $shimDir "python3.exe") -Force
+          }
+          $shimDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if (-not (Get-Command zstd -ErrorAction SilentlyContinue)) {
+            choco install zstd -y --no-progress
+            $zstdDir = "C:\ProgramData\chocolatey\bin"
+            if (Test-Path $zstdDir) {
+              $zstdDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            }
+          }
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.validate.outputs.rust_channel }}
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ep-cargo-windows-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: |
+            ep-cargo-windows-
+
+      - name: Configure rusty_v8
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: x86_64-pc-windows-msvc
+
+      - name: Configure MSVC environment
+        uses: ./.github/actions/setup-msvc-env
+        with:
+          target: x86_64-pc-windows-msvc
+
+      - name: Build Windows release binaries
+        shell: bash
+        working-directory: codex-rs
+        env:
+          STABLE_GIT_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          cargo build --target "${TARGET}" --release --locked \
+            --bin codex \
+            --bin codex-code-mode-host \
+            --bin codex-exec-server \
+            --bin codex-command-runner \
+            --bin codex-windows-sandbox-setup
+
+      - name: Smoke-test Windows binary version
+        shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $actual = (& "codex-rs\target\$env:TARGET\release\codex.exe" --version).Trim()
+          Write-Host "Built Windows binary: $actual"
+          if ($actual -ne "codex-cli $env:EXPECTED_VERSION") {
+            throw "Expected 'codex-cli $env:EXPECTED_VERSION', got '$actual'"
+          }
+
+      - name: Package Windows archives
+        shell: pwsh
+        env:
+          CODEX_REPO_ROOT: ${{ github.workspace }}
+          PACKAGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $relDir = Join-Path $env:GITHUB_WORKSPACE "codex-rs\target\$env:TARGET\release"
+          $outDir = Join-Path $env:GITHUB_WORKSPACE "dist\windows"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          python scripts/build_codex_package.py `
+            --target $env:TARGET `
+            --variant codex `
+            --package-version $env:PACKAGE_VERSION `
+            --cargo-profile release `
+            --entrypoint-bin (Join-Path $relDir "codex.exe") `
+            --code-mode-host-bin (Join-Path $relDir "codex-code-mode-host.exe") `
+            --exec-server-bin (Join-Path $relDir "codex-exec-server.exe") `
+            --codex-command-runner-bin (Join-Path $relDir "codex-command-runner.exe") `
+            --codex-windows-sandbox-setup-bin (Join-Path $relDir "codex-windows-sandbox-setup.exe") `
+            --package-dir (Join-Path $env:RUNNER_TEMP "codex-package-$env:TARGET") `
+            --archive-output (Join-Path $outDir "codex-package-$env:TARGET.tar.gz") `
+            --archive-output (Join-Path $outDir "codex-package-$env:TARGET.tar.zst") `
+            --force
+          Get-ChildItem $outDir | Format-Table Name, Length -AutoSize
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ep-package-windows
+          path: dist/windows/codex-package-x86_64-pc-windows-msvc.tar.*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [validate, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ep-package-linux
+          path: release-assets
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ep-package-windows
+          path: release-assets
+
+      - name: Assemble release assets and checksums
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          expected=(
+            "codex-package-x86_64-pc-windows-msvc.tar.gz"
+            "codex-package-x86_64-pc-windows-msvc.tar.zst"
+            "codex-package-x86_64-unknown-linux-musl.tar.gz"
+            "codex-package-x86_64-unknown-linux-musl.tar.zst"
+          )
+          for f in "${expected[@]}"; do
+            [[ -s "$f" ]] || { echo "Missing or empty asset: $f" >&2; exit 1; }
+          done
+          LC_ALL=C sha256sum "${expected[@]}" > codex-package_SHA256SUMS
+
+          # Extract installers directly from committed Git blobs so install.sh keeps LF.
+          git -C "${GITHUB_WORKSPACE}" show "${COMMIT_SHA}:scripts/install/install.sh" > install.sh
+          git -C "${GITHUB_WORKSPACE}" show "${COMMIT_SHA}:scripts/install/install.ps1" > install.ps1
+          printf '%s\n' "${COMMIT_SHA}" > SOURCE_COMMIT.txt
+
+          ls -lh
+          cat codex-package_SHA256SUMS
+
+      - name: Create and publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          COMMIT_SHA: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          TITLE="Codex ${VERSION} - Linux and Windows x86_64"
+          cat > /tmp/release_notes.md <<EOF
+          ## EP Codex ${VERSION}
+
+          Built automatically from commit \`${COMMIT_SHA}\` via GitHub Actions (\`ep-release\`).
+
+          - Linux \`x86_64-unknown-linux-musl\` (\`.tar.gz\` and \`.tar.zst\`)
+          - Windows \`x86_64-pc-windows-msvc\` (\`.tar.gz\` and \`.tar.zst\`, built from CRLF checkout)
+          - Checksums in \`codex-package_SHA256SUMS\`, installers \`install.sh\` / \`install.ps1\`, and \`SOURCE_COMMIT.txt\`.
+          EOF
+
+          if gh release view "${TAG}" --json isDraft --jq .isDraft > /tmp/release_draft 2>/dev/null; then
+            if [[ "$(cat /tmp/release_draft)" != "true" ]]; then
+              echo "Release ${TAG} is already published; refusing to overwrite." >&2
+              exit 1
+            fi
+            gh release upload "${TAG}" release-assets/* --clobber
+            gh release edit "${TAG}" --title "${TITLE}" --notes-file /tmp/release_notes.md --draft=false --latest
+          else
+            gh release create "${TAG}" release-assets/* \
+              --target "${COMMIT_SHA}" \
+              --title "${TITLE}" \
+              --notes-file /tmp/release_notes.md \
+              --draft
+            gh release edit "${TAG}" --draft=false --latest
+          fi
+
+          gh release view "${TAG}" --json tagName,name,isDraft,isPrerelease,url,assets
