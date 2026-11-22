@@ -47,12 +47,17 @@ jobs:
               if actual_tag != expected_tag:
                   sys.exit(f"Tag {actual_tag!r} does not match Cargo.toml version {version!r}")
 
-          # Ensure every workspace crate inheriting workspace.version is aligned in Cargo.lock.
+          # Ensure every local crate inheriting workspace.version (including path-only crates) is aligned in Cargo.lock.
           inherited = set()
-          for member in ws_toml["workspace"]["members"]:
-              pkg = tomllib.loads((ws_root / member / "Cargo.toml").read_text(encoding="utf-8")).get("package", {})
+          for toml_path in ws_root.rglob("Cargo.toml"):
+              if toml_path == ws_root / "Cargo.toml":
+                  continue
+              try:
+                  pkg = tomllib.loads(toml_path.read_text(encoding="utf-8")).get("package", {})
+              except Exception:
+                  continue
               ver = pkg.get("version")
-              if isinstance(ver, dict) and ver.get("workspace") is True:
+              if isinstance(ver, dict) and ver.get("workspace") is True and "name" in pkg:
                   inherited.add(pkg["name"])
 
           lock_text = (ws_root / "Cargo.lock").read_text(encoding="utf-8")
